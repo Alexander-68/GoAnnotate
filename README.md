@@ -9,7 +9,7 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
-- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints, and selected object size.
+- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), and selected object size.
 - Render zoom-invariant line weights with unfilled keypoint circles for clearer pose review.
 - Draw object indices inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.

@@ -521,14 +521,16 @@ function buildSelectedLines() {
   if (!obj) {
     return lines;
   }
-  const total = obj.keypoints.length;
-  let visible = 0;
-  for (const kp of obj.keypoints) {
-    if (kp.v > 0) {
-      visible += 1;
+  if (obj.hasPose) {
+    const total = obj.keypoints.length;
+    let visible = 0;
+    for (const kp of obj.keypoints) {
+      if (kp.v > 0) {
+        visible += 1;
+      }
     }
+    lines.push(`Keypoints: ${visible}/${total}`);
   }
-  lines.push(`Keypoints: ${visible}/${total}`);
   const { w, h } = bboxToPixels(obj.bbox);
   lines.push(`Size: ${Math.round(w)}x${Math.round(h)}px`);
   return lines;
