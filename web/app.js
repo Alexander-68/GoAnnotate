@@ -66,6 +66,7 @@ const state = {
   },
   spaceDown: false,
   dirty: false,
+  modifiedSinceLoad: false,
   saveTimer: null,
   osdCache: ""
 };
@@ -225,6 +226,7 @@ async function openProject() {
       state.imageBitmap = null;
       state.imageName = "";
       state.annotations = [];
+      state.modifiedSinceLoad = false;
       return;
     }
     state.index = 0;
@@ -244,6 +246,7 @@ async function loadImage(index) {
   state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
   state.annotations = [];
   state.dirty = false;
+  state.modifiedSinceLoad = false;
 
   setStatus(`Loading ${entry.name}...`);
 
@@ -481,12 +484,54 @@ function updateOsd() {
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
     : "Resolution: -";
   const zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
-  const modLine = `Status: ${state.dirty ? "Modified" : "Untouched"}`;
-  const text = [fileLine, countLine, resLine, zoomLine, modLine].join("\n");
+  const modLine = `Status: ${state.modifiedSinceLoad ? "Modified" : "Untouched"}`;
+  const objectsLines = buildObjectLines();
+  const selectedLines = buildSelectedLines();
+  const lines = [fileLine, countLine, resLine, zoomLine, modLine, ...objectsLines, ...selectedLines];
+  const text = lines.join("\n");
   if (text !== state.osdCache) {
     osdEl.textContent = text;
     state.osdCache = text;
   }
+}
+
+function buildObjectLines() {
+  const lines = [];
+  const total = state.annotations.length;
+  if (total === 0) {
+    lines.push("Objects: 0");
+    return lines;
+  }
+  const counts = new Map();
+  for (const ann of state.annotations) {
+    const key = Number.isFinite(ann.classId) ? ann.classId : 0;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  lines.push(`Objects: ${total}`);
+  const ids = Array.from(counts.keys()).sort((a, b) => a - b);
+  for (const id of ids) {
+    lines.push(`  ${id}:${counts.get(id)}`);
+  }
+  return lines;
+}
+
+function buildSelectedLines() {
+  const lines = [];
+  const obj = state.annotations[state.selection.objectIndex];
+  if (!obj) {
+    return lines;
+  }
+  const total = obj.keypoints.length;
+  let visible = 0;
+  for (const kp of obj.keypoints) {
+    if (kp.v > 0) {
+      visible += 1;
+    }
+  }
+  lines.push(`Keypoints: ${visible}/${total}`);
+  const { w, h } = bboxToPixels(obj.bbox);
+  lines.push(`Size: ${Math.round(w)}x${Math.round(h)}px`);
+  return lines;
 }
 
 function bboxToPixels(bbox) {
@@ -728,6 +773,7 @@ function deleteSelection() {
 
 function markDirty() {
   state.dirty = true;
+  state.modifiedSinceLoad = true;
   setStatus("Unsaved changes...");
 }
 
