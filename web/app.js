@@ -14,6 +14,25 @@ const appEl = document.querySelector(".app");
 const MAX_RECENTS = 10;
 
 const KPT_COUNT = 17;
+const KEYPOINT_NAMES = [
+  "nose",
+  "left eye",
+  "right eye",
+  "left ear",
+  "right ear",
+  "left shoulder",
+  "right shoulder",
+  "left elbow",
+  "right elbow",
+  "left wrist",
+  "right wrist",
+  "left hip",
+  "right hip",
+  "left knee",
+  "right knee",
+  "left ankle",
+  "right ankle"
+];
 const SKELETON = [
   [0, 1], [0, 2], [1, 3], [2, 4],
   [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
@@ -42,6 +61,12 @@ const state = {
     objectIndex: -1,
     keypointIndex: -1,
     corner: null
+  },
+  hover: {
+    objectIndex: -1,
+    keypointIndex: -1,
+    screenX: 0,
+    screenY: 0
   },
   view: {
     scale: 1,
@@ -113,6 +138,7 @@ function init() {
 
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
+  canvas.addEventListener("mouseleave", () => clearHover());
   window.addEventListener("mouseup", onMouseUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -244,6 +270,7 @@ async function loadImage(index) {
   state.index = index;
   state.imageName = entry.name;
   state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
+  state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
   state.annotations = [];
   state.dirty = false;
   state.modifiedSinceLoad = false;
@@ -380,24 +407,31 @@ function render() {
     ctx.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, dpr * state.view.offsetX, dpr * state.view.offsetY);
     ctx.drawImage(state.imageBitmap, 0, 0);
 
-    for (let i = 0; i < state.annotations.length; i += 1) {
-      drawAnnotation(state.annotations[i], i === state.selection.objectIndex, i);
+    const visible = getVisibleIndices();
+    for (const idx of visible) {
+      const annotation = state.annotations[idx];
+      if (!annotation) {
+        continue;
+      }
+      drawAnnotation(annotation, idx === state.selection.objectIndex);
     }
+    drawObjectLabels(visible);
+    drawHoverLabel();
   }
 
   updateOsd();
   requestAnimationFrame(render);
 }
 
-function drawAnnotation(annotation, isActive, index) {
-  drawBBox(annotation, isActive, index);
+function drawAnnotation(annotation, isActive) {
+  drawBBox(annotation, isActive);
   if (annotation.hasPose) {
     drawSkeleton(annotation, isActive);
     drawKeypoints(annotation, isActive);
   }
 }
 
-function drawBBox(annotation, isActive, index) {
+function drawBBox(annotation, isActive) {
   const color = CLASS_COLORS[annotation.classId % CLASS_COLORS.length] || "#e4572e";
   const { x, y, w, h } = bboxToPixels(annotation.bbox);
   ctx.strokeStyle = color;
@@ -409,12 +443,6 @@ function drawBBox(annotation, isActive, index) {
     ctx.fillRect(x, y, w, h);
     drawCorners(x, y, w, h);
   }
-
-  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
-  ctx.fillStyle = color;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(`${index + 1}`, x + toWorldSize(4), y + toWorldSize(4));
 }
 
 function drawCorners(x, y, w, h) {
@@ -470,6 +498,65 @@ function drawKeypoints(annotation, isActive) {
       ctx.stroke();
     }
   }
+}
+
+function drawObjectLabels(indices) {
+  const { dpr } = state.canvasSize;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  for (const idx of indices) {
+    const annotation = state.annotations[idx];
+    if (!annotation) {
+      continue;
+    }
+    const { x, y } = bboxToPixels(annotation.bbox);
+    const screenPos = worldToScreen(x, y);
+    const color = CLASS_COLORS[annotation.classId % CLASS_COLORS.length] || "#e4572e";
+    ctx.fillStyle = color;
+    ctx.fillText(`${idx + 1}`, screenPos.x + 4, screenPos.y + 4);
+  }
+  ctx.restore();
+}
+
+function drawHoverLabel() {
+  const { objectIndex, keypointIndex } = state.hover;
+  if (objectIndex < 0 || keypointIndex < 0) {
+    return;
+  }
+  const label = KEYPOINT_NAMES[keypointIndex] || `kp ${keypointIndex + 1}`;
+  const { dpr, width, height } = state.canvasSize;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  const paddingX = 6;
+  const paddingY = 3;
+  const textWidth = ctx.measureText(label).width;
+  const boxWidth = textWidth + paddingX * 2;
+  const boxHeight = 18;
+  let boxX = state.hover.screenX + 12;
+  let boxY = state.hover.screenY - boxHeight - 8;
+  if (boxX + boxWidth > width - 4) {
+    boxX = state.hover.screenX - boxWidth - 12;
+  }
+  if (boxX < 4) {
+    boxX = 4;
+  }
+  if (boxY < 4) {
+    boxY = state.hover.screenY + 12;
+  }
+  if (boxY + boxHeight > height - 4) {
+    boxY = Math.max(4, height - boxHeight - 4);
+  }
+  ctx.fillStyle = "rgba(29, 28, 26, 0.9)";
+  ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+  ctx.fillStyle = "#fef6e8";
+  ctx.fillText(label, boxX + paddingX, boxY + paddingY);
+  ctx.restore();
 }
 
 function updateOsd() {
@@ -579,6 +666,7 @@ function onMouseDown(event) {
   if (!state.imageBitmap) {
     return;
   }
+  clearHover();
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
 
   if (event.button === 2 || event.button === 1 || state.spaceDown) {
@@ -626,10 +714,17 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
-  if (!state.imageBitmap || !state.dragging.mode) {
+  if (!state.imageBitmap) {
     return;
   }
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
+
+  if (!state.dragging.mode) {
+    updateHover(screenX, screenY);
+    return;
+  }
+
+  clearHover();
 
   if (state.dragging.mode === "pan") {
     const dx = screenX - state.dragging.startX;
@@ -737,6 +832,21 @@ function onKeyDown(event) {
     cycleVisibility();
   }
 
+  if (event.code === "KeyC") {
+    event.preventDefault();
+    selectNextObject();
+  }
+
+  if (event.code === "KeyZ") {
+    event.preventDefault();
+    selectPrevObject();
+  }
+
+  if (event.code === "KeyX") {
+    event.preventDefault();
+    clearSelection();
+  }
+
   if (event.code === "Delete") {
     deleteSelection();
   }
@@ -823,8 +933,12 @@ function pickKeypoint(screenX, screenY) {
     if (!ann || !ann.hasPose) {
       continue;
     }
+    const isActive = idx === state.selection.objectIndex;
     for (let k = 0; k < ann.keypoints.length; k += 1) {
       const kp = ann.keypoints[k];
+      if (kp.v === 0 && !isActive) {
+        continue;
+      }
       const pos = worldToScreen(kp.x * state.imageWidth, kp.y * state.imageHeight);
       const dist = Math.hypot(screenX - pos.x, screenY - pos.y);
       if (dist <= radius) {
@@ -913,28 +1027,77 @@ function updateCorners(corners, activeCorner, nx, ny) {
 }
 
 function buildPickOrder() {
-  const order = [];
-  if (state.selection.objectIndex >= 0) {
-    order.push(state.selection.objectIndex);
+  const selected = state.selection.objectIndex;
+  if (selected >= 0 && selected < state.annotations.length) {
+    return [selected];
   }
+  const order = [];
   for (let i = state.annotations.length - 1; i >= 0; i -= 1) {
-    if (i !== state.selection.objectIndex) {
-      order.push(i);
-    }
+    order.push(i);
   }
   return order;
+}
+
+function getVisibleIndices() {
+  const selected = state.selection.objectIndex;
+  if (selected >= 0 && selected < state.annotations.length) {
+    return [selected];
+  }
+  const indices = [];
+  for (let i = 0; i < state.annotations.length; i += 1) {
+    indices.push(i);
+  }
+  return indices;
 }
 
 function setSelection(objectIndex, keypointIndex, corner) {
   state.selection.objectIndex = objectIndex;
   state.selection.keypointIndex = keypointIndex;
   state.selection.corner = corner;
+  clearHover();
 }
 
 function clearSelection() {
-  state.selection.objectIndex = -1;
-  state.selection.keypointIndex = -1;
-  state.selection.corner = null;
+  setSelection(-1, -1, null);
+}
+
+function selectNextObject() {
+  const total = state.annotations.length;
+  if (total === 0) {
+    return;
+  }
+  const next = state.selection.objectIndex < 0
+    ? 0
+    : (state.selection.objectIndex + 1) % total;
+  setSelection(next, -1, null);
+}
+
+function selectPrevObject() {
+  const total = state.annotations.length;
+  if (total === 0) {
+    return;
+  }
+  const prev = state.selection.objectIndex < 0
+    ? total - 1
+    : (state.selection.objectIndex - 1 + total) % total;
+  setSelection(prev, -1, null);
+}
+
+function updateHover(screenX, screenY) {
+  const pick = pickKeypoint(screenX, screenY);
+  if (pick) {
+    state.hover.objectIndex = pick.objectIndex;
+    state.hover.keypointIndex = pick.keypointIndex;
+    state.hover.screenX = screenX;
+    state.hover.screenY = screenY;
+    return;
+  }
+  clearHover();
+}
+
+function clearHover() {
+  state.hover.objectIndex = -1;
+  state.hover.keypointIndex = -1;
 }
 
 function getMousePos(event) {
