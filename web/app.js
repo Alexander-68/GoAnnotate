@@ -398,7 +398,7 @@ function drawBBox(annotation, isActive, index) {
   const color = CLASS_COLORS[annotation.classId % CLASS_COLORS.length] || "#e4572e";
   const { x, y, w, h } = bboxToPixels(annotation.bbox);
   ctx.strokeStyle = color;
-  ctx.lineWidth = isActive ? 2 : 1;
+  ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
   ctx.strokeRect(x, y, w, h);
 
   if (isActive) {
@@ -409,11 +409,13 @@ function drawBBox(annotation, isActive, index) {
 
   ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
   ctx.fillStyle = color;
-  ctx.fillText(`ID ${index + 1}`, x + 4, y - 6);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`${index + 1}`, x + toWorldSize(4), y + toWorldSize(4));
 }
 
 function drawCorners(x, y, w, h) {
-  const size = 8;
+  const size = toWorldSize(8);
   const corners = [
     [x, y],
     [x + w, y],
@@ -428,7 +430,7 @@ function drawCorners(x, y, w, h) {
 
 function drawSkeleton(annotation, isActive) {
   ctx.strokeStyle = isActive ? "rgba(29, 111, 163, 0.7)" : "rgba(29, 111, 163, 0.45)";
-  ctx.lineWidth = isActive ? 2 : 1;
+  ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
   for (const [a, b] of SKELETON) {
     const kpA = annotation.keypoints[a];
     const kpB = annotation.keypoints[b];
@@ -453,19 +455,15 @@ function drawKeypoints(annotation, isActive) {
     }
     const pos = keypointToPixels(kp);
     const isSelected = isActive && state.selection.keypointIndex === i;
-    const radius = isSelected ? 6 : baseRadius;
+    const radius = toWorldSize(isSelected ? 6 : baseRadius);
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = VIS_COLORS[kp.v] || VIS_COLORS[2];
-    ctx.fill();
-    if (kp.v === 0) {
-      ctx.strokeStyle = "rgba(29, 28, 26, 0.35)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+    ctx.strokeStyle = kp.v === 0 ? "rgba(29, 28, 26, 0.35)" : (VIS_COLORS[kp.v] || VIS_COLORS[2]);
+    ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5);
+    ctx.stroke();
     if (isSelected) {
       ctx.strokeStyle = "#1d1c1a";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = toWorldSize(2.5);
       ctx.stroke();
     }
   }
@@ -507,6 +505,11 @@ function keypointToPixels(kp) {
     x: kp.x * state.imageWidth,
     y: kp.y * state.imageHeight
   };
+}
+
+function toWorldSize(sizePx) {
+  const scale = Math.max(state.view.scale, 0.0001);
+  return sizePx / scale;
 }
 
 function screenToWorld(screenX, screenY) {
