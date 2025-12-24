@@ -8,6 +8,9 @@ const loadBtn = document.getElementById("loadBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const statusEl = document.getElementById("status");
+const osdEl = document.getElementById("osd");
+const toggleSidebarBtn = document.getElementById("toggleSidebar");
+const appEl = document.querySelector(".app");
 const MAX_RECENTS = 10;
 
 const KPT_COUNT = 17;
@@ -63,7 +66,8 @@ const state = {
   },
   spaceDown: false,
   dirty: false,
-  saveTimer: null
+  saveTimer: null,
+  osdCache: ""
 };
 
 const storageKey = {
@@ -84,6 +88,14 @@ function init() {
 
   confirmLoadBtn.addEventListener("click", () => {
     openProject();
+  });
+
+  toggleSidebarBtn.addEventListener("click", () => {
+    appEl.classList.toggle("sidebar-collapsed");
+    const isCollapsed = appEl.classList.contains("sidebar-collapsed");
+    toggleSidebarBtn.setAttribute("aria-pressed", isCollapsed ? "true" : "false");
+    toggleSidebarBtn.setAttribute("aria-label", isCollapsed ? "Expand sidebar" : "Collapse sidebar");
+    resizeCanvas();
   });
 
   imagesDirInput.addEventListener("keydown", (event) => {
@@ -344,7 +356,7 @@ function resizeCanvas() {
 }
 
 function fitImage() {
-  const margin = 24;
+  const margin = 0;
   const availW = Math.max(1, state.canvasSize.width - margin * 2);
   const availH = Math.max(1, state.canvasSize.height - margin * 2);
   const scaleX = availW / state.imageWidth;
@@ -355,7 +367,7 @@ function fitImage() {
 }
 
 function render() {
-  const { width, height, dpr } = state.canvasSize;
+  const { dpr } = state.canvasSize;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -370,7 +382,7 @@ function render() {
     }
   }
 
-  drawHud(width, height, dpr);
+  updateOsd();
   requestAnimationFrame(render);
 }
 
@@ -459,14 +471,24 @@ function drawKeypoints(annotation, isActive) {
   }
 }
 
-function drawHud(width, height, dpr) {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "rgba(29, 28, 26, 0.7)";
-  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
-  const text = state.imageName
-    ? `${state.imageName} • ${state.imageWidth}x${state.imageHeight} • ${state.annotations.length} boxes`
-    : "Load an image directory to begin.";
-  ctx.fillText(text, 24, height - 18);
+function updateOsd() {
+  if (!osdEl) {
+    return;
+  }
+  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
+  const countLine = state.images.length
+    ? `Index: ${state.index + 1}/${state.images.length}`
+    : "Index: 0/0";
+  const resLine = state.imageWidth && state.imageHeight
+    ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
+    : "Resolution: -";
+  const zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
+  const modLine = `Status: ${state.dirty ? "Modified" : "Untouched"}`;
+  const text = [fileLine, countLine, resLine, zoomLine, modLine].join("\n");
+  if (text !== state.osdCache) {
+    osdEl.textContent = text;
+    state.osdCache = text;
+  }
 }
 
 function bboxToPixels(bbox) {

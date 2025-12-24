@@ -8,19 +8,27 @@
 </head>
 <body>
   <div class="app">
-    <header class="toolbar">
-      <div class="brand">
-        <div class="brand-title">GoAnnotate</div>
-        <div class="brand-sub">YOLO11 detections + 17-keypoint pose</div>
-      </div>
-      <div class="inputs">
-        <button id="loadBtn" class="btn ghost">Load</button>
-        <div class="status" id="status">Idle</div>
-      </div>
-    </header>
-    <main class="workspace">
-      <canvas id="canvas"></canvas>
-    </main>
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <button class="icon-btn" id="toggleSidebar" type="button" aria-label="Collapse sidebar" aria-pressed="false">
+            ≡
+          </button>
+          <div class="brand">
+            <div class="brand-title">GoAnnotate</div>
+            <div class="brand-sub">YOLO11 detections + 17-keypoint pose</div>
+          </div>
+        </div>
+        <div class="sidebar-content">
+          <button id="loadBtn" class="btn ghost">Load</button>
+          <div class="status" id="status">Idle</div>
+        </div>
+      </aside>
+      <main class="workspace">
+        <div class="osd" id="osd"></div>
+        <canvas id="canvas"></canvas>
+      </main>
+    </div>
   </div>
   <div class="modal hidden" id="loadModal" aria-hidden="true">
     <div class="modal-scrim" data-close="true"></div>

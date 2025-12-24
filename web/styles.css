@@ -37,22 +37,31 @@ body::before {
 .app {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
 }
 
-.toolbar {
+.layout {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: space-between;
-  align-items: center;
-  padding: 18px 24px;
+  min-height: 100vh;
+}
+
+.sidebar {
+  flex: 0 0 20vw;
+  max-width: 360px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 16px;
   background: var(--panel);
-  border-bottom: 1px solid var(--panel-border);
+  border-right: 1px solid var(--panel-border);
   box-shadow: var(--shadow);
-  animation: slideDown 0.5s ease-out;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .brand-title {
@@ -67,11 +76,10 @@ body::before {
   font-size: 13px;
 }
 
-.inputs {
+.sidebar-content {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 12px;
-  align-items: flex-end;
 }
 
 .field {
@@ -132,21 +140,64 @@ body::before {
   color: var(--accent-2);
 }
 
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(29, 28, 26, 0.2);
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  border-color: rgba(29, 28, 26, 0.45);
+}
+
+.app.sidebar-collapsed .sidebar {
+  flex-basis: 56px;
+  min-width: 56px;
+  max-width: 56px;
+  padding: 18px 10px;
+}
+
+.app.sidebar-collapsed .brand,
+.app.sidebar-collapsed .sidebar-content {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .workspace {
   position: relative;
   flex: 1;
-  padding: 24px;
+  padding: 0;
+  overflow: hidden;
   animation: fadeIn 0.6s ease-out;
 }
 
 #canvas {
   width: 100%;
   height: 100%;
-  background: #fdfbf5;
-  border-radius: 18px;
-  border: 1px solid rgba(29, 28, 26, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), var(--shadow);
   display: block;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.osd {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: pre;
+  pointer-events: none;
 }
 
 .modal {
@@ -213,17 +264,6 @@ body::before {
   justify-content: flex-end;
 }
 
-@keyframes slideDown {
-  from {
-    transform: translateY(-12px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -234,20 +274,28 @@ body::before {
 }
 
 @media (max-width: 900px) {
-  .toolbar {
+  .layout {
     flex-direction: column;
-    align-items: flex-start;
   }
 
-  .inputs {
+  .sidebar {
     width: 100%;
+    max-width: none;
+    min-width: 0;
+    flex-basis: auto;
+    box-shadow: none;
+    border-right: none;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .app.sidebar-collapsed .sidebar {
+    height: 56px;
+    min-height: 56px;
+    padding: 10px 12px;
+    overflow: hidden;
   }
 
   .field input {
     width: min(280px, 80vw);
-  }
-
-  .workspace {
-    padding: 16px;
   }
 }
