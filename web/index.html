@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GoAnnotate</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="toolbar">
+      <div class="brand">
+        <div class="brand-title">GoAnnotate</div>
+        <div class="brand-sub">YOLO11 detections + 17-keypoint pose</div>
+      </div>
+      <div class="inputs">
+        <button id="loadBtn" class="btn ghost">Load</button>
+        <div class="status" id="status">Idle</div>
+      </div>
+    </header>
+    <main class="workspace">
+      <canvas id="canvas"></canvas>
+    </main>
+  </div>
+  <div class="modal hidden" id="loadModal" aria-hidden="true">
+    <div class="modal-scrim" data-close="true"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Load Project</div>
+        <button class="modal-close" type="button" data-close="true">X</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span>Images Dir</span>
+          <input id="imagesDir" type="text" list="imagesDirList" placeholder="C:\data\images" />
+        </label>
+        <datalist id="imagesDirList"></datalist>
+        <label class="field">
+          <span>Labels Dir</span>
+          <input id="labelsDir" type="text" list="labelsDirList" placeholder="C:\data\labels" />
+        </label>
+        <datalist id="labelsDirList"></datalist>
+      </div>
+      <div class="modal-actions">
+        <button id="confirmLoadBtn" class="btn ghost" type="button">Load</button>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
