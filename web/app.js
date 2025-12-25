@@ -38,12 +38,87 @@ const SKELETON = [
   [11, 13], [13, 15], [12, 14], [14, 16]
 ];
 
-const CLASS_COLORS = ["#e4572e", "#1d6fa3", "#57a639"];
-const VIS_COLORS = {
-  0: "rgba(29, 28, 26, 0.25)",
-  1: "#f4b73b",
-  2: "#1d6fa3"
-};
+const COLOR_SCHEMES = [
+  {
+    name: "Default",
+    classColors: ["#e4572e", "#1d6fa3", "#57a639"],
+    visColors: {
+      0: "rgba(29, 28, 26, 0.25)",
+      1: "#f4b73b",
+      2: "#1d6fa3"
+    },
+    skeleton: {
+      active: "rgba(29, 111, 163, 0.7)",
+      inactive: "rgba(29, 111, 163, 0.45)"
+    }
+  },
+  {
+    name: "High Contrast",
+    classColors: ["#f94144", "#f9c74f", "#43aa8b", "#577590"],
+    visColors: {
+      0: "rgba(20, 20, 20, 0.18)",
+      1: "#f9844a",
+      2: "#90be6d"
+    },
+    skeleton: {
+      active: "rgba(249, 132, 74, 0.85)",
+      inactive: "rgba(249, 132, 74, 0.55)"
+    }
+  },
+  {
+    name: "Bright",
+    classColors: ["#00a7e1", "#f15bb5", "#00bbf9", "#fee440"],
+    visColors: {
+      0: "rgba(10, 10, 10, 0.2)",
+      1: "#fee440",
+      2: "#f15bb5"
+    },
+    skeleton: {
+      active: "rgba(0, 167, 225, 0.8)",
+      inactive: "rgba(0, 167, 225, 0.5)"
+    }
+  },
+  {
+    name: "All White",
+    classColors: ["#ffffff"],
+    visColors: {
+      0: "rgba(255, 255, 255, 0.25)",
+      1: "#ffffff",
+      2: "#ffffff"
+    },
+    skeleton: {
+      active: "rgba(255, 255, 255, 0.85)",
+      inactive: "rgba(255, 255, 255, 0.55)"
+    }
+  },
+  {
+    name: "All Black",
+    classColors: ["#111111"],
+    visColors: {
+      0: "rgba(0, 0, 0, 0.2)",
+      1: "#111111",
+      2: "#111111"
+    },
+    skeleton: {
+      active: "rgba(0, 0, 0, 0.85)",
+      inactive: "rgba(0, 0, 0, 0.55)"
+    }
+  },
+  {
+    name: "All Yellow",
+    classColors: ["#ffd000"],
+    visColors: {
+      0: "rgba(255, 208, 0, 0.25)",
+      1: "#ffd000",
+      2: "#ffd000"
+    },
+    skeleton: {
+      active: "rgba(255, 208, 0, 0.85)",
+      inactive: "rgba(255, 208, 0, 0.55)"
+    }
+  }
+];
+const MIN_BBOX_PIXELS = 4;
 
 const state = {
   imagesDir: "",
@@ -60,6 +135,12 @@ const state = {
     objectIndex: -1,
     keypointIndex: -1,
     corner: null
+  },
+  lastClassId: 0,
+  colorSchemeIndex: 0,
+  lastMouse: {
+    screenX: null,
+    screenY: null
   },
   hover: {
     objectIndex: -1,
@@ -83,6 +164,8 @@ const state = {
     startY: 0,
     startWorldX: 0,
     startWorldY: 0,
+    currentWorldX: 0,
+    currentWorldY: 0,
     startOffsetX: 0,
     startOffsetY: 0,
     startCenter: null,
@@ -341,6 +424,14 @@ function parseLabels(text) {
   return annotations;
 }
 
+function createEmptyKeypoints() {
+  const points = [];
+  for (let i = 0; i < KPT_COUNT; i += 1) {
+    points.push({ x: 0, y: 0, v: 0 });
+  }
+  return points;
+}
+
 function serializeLabels() {
   return state.annotations.map((ann) => {
     const items = [
@@ -421,6 +512,9 @@ function render() {
       }
       drawAnnotation(annotation, idx === state.selection.objectIndex);
     }
+    if (state.dragging.mode === "newBBox") {
+      drawNewBBox();
+    }
     drawObjectLabels(visible);
     drawHoverLabel();
   }
@@ -438,7 +532,8 @@ function drawAnnotation(annotation, isActive) {
 }
 
 function drawBBox(annotation, isActive) {
-  const color = CLASS_COLORS[annotation.classId % CLASS_COLORS.length] || "#e4572e";
+  const scheme = getColorScheme();
+  const color = scheme.classColors[annotation.classId % scheme.classColors.length] || "#e4572e";
   const { x, y, w, h } = bboxToPixels(annotation.bbox);
   ctx.strokeStyle = color;
   ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
@@ -465,8 +560,33 @@ function drawCorners(x, y, w, h) {
   }
 }
 
+function drawNewBBox() {
+  const { startWorldX, startWorldY, currentWorldX, currentWorldY } = state.dragging;
+  if (!Number.isFinite(startWorldX) || !Number.isFinite(startWorldY)) {
+    return;
+  }
+  const endX = Number.isFinite(currentWorldX) ? currentWorldX : startWorldX;
+  const endY = Number.isFinite(currentWorldY) ? currentWorldY : startWorldY;
+  const x = Math.min(startWorldX, endX);
+  const y = Math.min(startWorldY, endY);
+  const w = Math.abs(endX - startWorldX);
+  const h = Math.abs(endY - startWorldY);
+  if (w < 1 || h < 1) {
+    return;
+  }
+  const classId = Number.isFinite(state.lastClassId) ? state.lastClassId : 0;
+  const color = CLASS_COLORS[classId % CLASS_COLORS.length] || "#e4572e";
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = toWorldSize(2);
+  ctx.setLineDash([toWorldSize(6), toWorldSize(4)]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
+
 function drawSkeleton(annotation, isActive) {
-  ctx.strokeStyle = isActive ? "rgba(29, 111, 163, 0.7)" : "rgba(29, 111, 163, 0.45)";
+  const scheme = getColorScheme();
+  ctx.strokeStyle = isActive ? scheme.skeleton.active : scheme.skeleton.inactive;
   ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
   for (const [a, b] of SKELETON) {
     const kpA = annotation.keypoints[a];
@@ -485,9 +605,10 @@ function drawSkeleton(annotation, isActive) {
 
 function drawKeypoints(annotation, isActive) {
   const baseRadius = 4;
+  const scheme = getColorScheme();
   for (let i = 0; i < annotation.keypoints.length; i += 1) {
     const kp = annotation.keypoints[i];
-    if (kp.v === 0 && !isActive) {
+    if (kp.v === 0) {
       continue;
     }
     const pos = keypointToPixels(kp);
@@ -495,7 +616,7 @@ function drawKeypoints(annotation, isActive) {
     const radius = toWorldSize(isSelected ? 6 : baseRadius);
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    const visColor = VIS_COLORS[kp.v] || VIS_COLORS[2];
+    const visColor = scheme.visColors[kp.v] || scheme.visColors[2];
     ctx.strokeStyle = visColor;
     ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5);
     ctx.stroke();
@@ -509,9 +630,10 @@ function drawKeypoints(annotation, isActive) {
 
 function drawObjectLabels(indices) {
   const { dpr } = state.canvasSize;
+  const scheme = getColorScheme();
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
+  ctx.font = "18px 'Space Grotesk', 'Trebuchet MS', sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   for (const idx of indices) {
@@ -521,9 +643,9 @@ function drawObjectLabels(indices) {
     }
     const { x, y } = bboxToPixels(annotation.bbox);
     const screenPos = worldToScreen(x, y);
-    const color = CLASS_COLORS[annotation.classId % CLASS_COLORS.length] || "#e4572e";
+    const color = scheme.classColors[annotation.classId % scheme.classColors.length] || "#e4572e";
     ctx.fillStyle = color;
-    ctx.fillText(`${idx + 1}`, screenPos.x + 4, screenPos.y + 4);
+    ctx.fillText(`${annotation.classId}:${idx + 1}`, screenPos.x + 4, screenPos.y + 4);
   }
   ctx.restore();
 }
@@ -681,6 +803,8 @@ function onMouseDown(event) {
   state.dragging.snapshotTaken = false;
   clearHover();
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
+  state.lastMouse.screenX = screenX;
+  state.lastMouse.screenY = screenY;
 
   if (event.button === 2 || event.button === 1 || state.spaceDown) {
     state.dragging.mode = "pan";
@@ -692,6 +816,25 @@ function onMouseDown(event) {
   }
 
   if (event.button !== 0) {
+    return;
+  }
+
+  if (event.ctrlKey) {
+    if (state.selection.objectIndex < 0) {
+      state.dragging.mode = "newBBox";
+      state.dragging.startWorldX = worldX;
+      state.dragging.startWorldY = worldY;
+      state.dragging.currentWorldX = worldX;
+      state.dragging.currentWorldY = worldY;
+      return;
+    }
+    const addedIndex = addKeypointAt(state.selection.objectIndex, worldX, worldY);
+    if (addedIndex >= 0) {
+      state.dragging.mode = "keypoint";
+      state.dragging.startWorldX = worldX;
+      state.dragging.startWorldY = worldY;
+      state.dragging.snapshotTaken = true;
+    }
     return;
   }
 
@@ -731,6 +874,8 @@ function onMouseMove(event) {
     return;
   }
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
+  state.lastMouse.screenX = screenX;
+  state.lastMouse.screenY = screenY;
 
   if (!state.dragging.mode) {
     updateHover(screenX, screenY);
@@ -744,6 +889,12 @@ function onMouseMove(event) {
     const dy = screenY - state.dragging.startY;
     state.view.offsetX = state.dragging.startOffsetX + dx;
     state.view.offsetY = state.dragging.startOffsetY + dy;
+    return;
+  }
+
+  if (state.dragging.mode === "newBBox") {
+    state.dragging.currentWorldX = worldX;
+    state.dragging.currentWorldY = worldY;
     return;
   }
 
@@ -798,7 +949,12 @@ function onMouseMove(event) {
   }
 }
 
-function onMouseUp() {
+function onMouseUp(event) {
+  if (state.dragging.mode === "newBBox") {
+    finishNewBBox(event);
+    state.dragging.mode = null;
+    return;
+  }
   state.dragging.mode = null;
 }
 
@@ -857,6 +1013,11 @@ function onKeyDown(event) {
     cycleVisibility();
   }
 
+  if (event.code === "KeyB") {
+    event.preventDefault();
+    cycleColorScheme();
+  }
+
   if (event.code === "KeyC") {
     event.preventDefault();
     selectNextObject();
@@ -875,12 +1036,205 @@ function onKeyDown(event) {
   if (event.code === "Delete") {
     deleteSelection();
   }
+
+  if (isPlusKey(event)) {
+    event.preventDefault();
+    handlePlusMinus(1);
+  }
+
+  if (isMinusKey(event)) {
+    event.preventDefault();
+    handlePlusMinus(-1);
+  }
 }
 
 function onKeyUp(event) {
   if (event.code === "Space") {
     state.spaceDown = false;
   }
+}
+
+function isPlusKey(event) {
+  return event.key === "+" || event.code === "NumpadAdd";
+}
+
+function isMinusKey(event) {
+  return event.key === "-" || event.code === "NumpadSubtract";
+}
+
+function handlePlusMinus(delta) {
+  if (state.selection.objectIndex < 0) {
+    return;
+  }
+  if (state.selection.keypointIndex >= 0) {
+    changeSelectedKeypointName(delta);
+    return;
+  }
+  changeSelectedClassId(delta);
+}
+
+function changeSelectedClassId(delta) {
+  const annotation = state.annotations[state.selection.objectIndex];
+  if (!annotation) {
+    return;
+  }
+  const currentId = Number.isFinite(annotation.classId) ? Math.round(annotation.classId) : 0;
+  const nextId = Math.max(0, currentId + delta);
+  if (nextId === annotation.classId) {
+    return;
+  }
+  pushUndo();
+  annotation.classId = nextId;
+  state.lastClassId = nextId;
+  markDirty();
+}
+
+function changeSelectedKeypointName(delta) {
+  const annotation = state.annotations[state.selection.objectIndex];
+  if (!annotation) {
+    return;
+  }
+  const currentIndex = state.selection.keypointIndex;
+  if (currentIndex < 0) {
+    return;
+  }
+  ensureKeypoints(annotation);
+  const current = annotation.keypoints[currentIndex];
+  if (!current || current.v === 0) {
+    return;
+  }
+  const nextIndex = findNextAvailableKeypointIndex(annotation, currentIndex, delta);
+  if (nextIndex < 0) {
+    return;
+  }
+  pushUndo();
+  annotation.keypoints[nextIndex] = { x: current.x, y: current.y, v: current.v };
+  annotation.keypoints[currentIndex] = { x: 0, y: 0, v: 0 };
+  annotation.hasPose = true;
+  state.selection.keypointIndex = nextIndex;
+  showKeypointHover(state.selection.objectIndex, nextIndex);
+  markDirty();
+}
+
+function ensureKeypoints(annotation) {
+  if (!annotation.keypoints) {
+    annotation.keypoints = [];
+  }
+  for (let i = annotation.keypoints.length; i < KPT_COUNT; i += 1) {
+    annotation.keypoints.push({ x: 0, y: 0, v: 0 });
+  }
+  if (annotation.keypoints.length > KPT_COUNT) {
+    annotation.keypoints.length = KPT_COUNT;
+  }
+}
+
+function findFirstAvailableKeypointIndex(annotation) {
+  ensureKeypoints(annotation);
+  for (let i = 0; i < KPT_COUNT; i += 1) {
+    const kp = annotation.keypoints[i];
+    if (kp && kp.v === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function findNextAvailableKeypointIndex(annotation, currentIndex, step) {
+  ensureKeypoints(annotation);
+  for (let offset = 1; offset <= KPT_COUNT; offset += 1) {
+    const idx = (currentIndex + step * offset + KPT_COUNT) % KPT_COUNT;
+    const kp = annotation.keypoints[idx];
+    if (kp && kp.v === 0) {
+      return idx;
+    }
+  }
+  return -1;
+}
+
+function addKeypointAt(objectIndex, worldX, worldY) {
+  const annotation = state.annotations[objectIndex];
+  if (!annotation) {
+    return -1;
+  }
+  const nextIndex = findFirstAvailableKeypointIndex(annotation);
+  if (nextIndex < 0) {
+    return -1;
+  }
+  pushUndo();
+  const kp = annotation.keypoints[nextIndex];
+  kp.x = clamp(worldX / state.imageWidth, 0, 1);
+  kp.y = clamp(worldY / state.imageHeight, 0, 1);
+  kp.v = 2;
+  annotation.hasPose = true;
+  setSelection(objectIndex, nextIndex, null);
+  showKeypointHover(objectIndex, nextIndex);
+  markDirty();
+  return nextIndex;
+}
+
+function showKeypointHover(objectIndex, keypointIndex) {
+  const annotation = state.annotations[objectIndex];
+  const kp = annotation ? annotation.keypoints[keypointIndex] : null;
+  if (!kp) {
+    return;
+  }
+  let screenX = state.lastMouse.screenX;
+  let screenY = state.lastMouse.screenY;
+  if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+    const pos = worldToScreen(kp.x * state.imageWidth, kp.y * state.imageHeight);
+    screenX = pos.x;
+    screenY = pos.y;
+  }
+  state.hover.objectIndex = objectIndex;
+  state.hover.keypointIndex = keypointIndex;
+  state.hover.screenX = screenX;
+  state.hover.screenY = screenY;
+}
+
+function finishNewBBox(event) {
+  const startX = state.dragging.startWorldX;
+  const startY = state.dragging.startWorldY;
+  let endX = state.dragging.currentWorldX;
+  let endY = state.dragging.currentWorldY;
+  if (event) {
+    const pos = getMousePos(event);
+    endX = pos.worldX;
+    endY = pos.worldY;
+  }
+  if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+    return;
+  }
+  if (!Number.isFinite(endX) || !Number.isFinite(endY)) {
+    return;
+  }
+  const widthPx = Math.abs(endX - startX);
+  const heightPx = Math.abs(endY - startY);
+  if (widthPx < MIN_BBOX_PIXELS || heightPx < MIN_BBOX_PIXELS) {
+    return;
+  }
+  const minX = clamp(Math.min(startX, endX) / state.imageWidth, 0, 1);
+  const maxX = clamp(Math.max(startX, endX) / state.imageWidth, 0, 1);
+  const minY = clamp(Math.min(startY, endY) / state.imageHeight, 0, 1);
+  const maxY = clamp(Math.max(startY, endY) / state.imageHeight, 0, 1);
+  const baseId = Number.isFinite(state.lastClassId) ? Math.round(state.lastClassId) : 0;
+  const classId = Math.max(0, baseId);
+  const bbox = {
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+    w: Math.max(0.0001, maxX - minX),
+    h: Math.max(0.0001, maxY - minY)
+  };
+  const annotation = {
+    classId,
+    bbox,
+    keypoints: createEmptyKeypoints(),
+    hasPose: false
+  };
+  pushUndo();
+  state.annotations.push(annotation);
+  setSelection(state.annotations.length - 1, -1, null);
+  state.lastClassId = classId;
+  markDirty();
 }
 
 function cycleVisibility() {
@@ -912,6 +1266,7 @@ function deleteSelection() {
     pushUndo();
     kp.v = 0;
     annotation.hasPose = true;
+    state.selection.keypointIndex = -1;
     markDirty();
     return;
   }
@@ -1061,10 +1416,9 @@ function pickKeypoint(screenX, screenY) {
     if (!ann || !ann.hasPose) {
       continue;
     }
-    const isActive = idx === state.selection.objectIndex;
     for (let k = 0; k < ann.keypoints.length; k += 1) {
       const kp = ann.keypoints[k];
-      if (kp.v === 0 && !isActive) {
+      if (kp.v === 0) {
         continue;
       }
       const pos = worldToScreen(kp.x * state.imageWidth, kp.y * state.imageHeight);
@@ -1182,6 +1536,12 @@ function setSelection(objectIndex, keypointIndex, corner) {
   state.selection.objectIndex = objectIndex;
   state.selection.keypointIndex = keypointIndex;
   state.selection.corner = corner;
+  if (objectIndex >= 0) {
+    const annotation = state.annotations[objectIndex];
+    if (annotation && Number.isFinite(annotation.classId)) {
+      state.lastClassId = Math.max(0, Math.round(annotation.classId));
+    }
+  }
   clearHover();
 }
 
@@ -1243,6 +1603,19 @@ function getMousePos(event) {
 
 function setStatus(text) {
   state.statusText = text;
+}
+
+function getColorScheme() {
+  return COLOR_SCHEMES[state.colorSchemeIndex] || COLOR_SCHEMES[0];
+}
+
+function cycleColorScheme() {
+  if (COLOR_SCHEMES.length === 0) {
+    return;
+  }
+  state.colorSchemeIndex = (state.colorSchemeIndex + 1) % COLOR_SCHEMES.length;
+  const scheme = getColorScheme();
+  setStatus(`Color scheme: ${scheme.name}`);
 }
 
 init();
