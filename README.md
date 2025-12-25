@@ -57,3 +57,9 @@ go run .
 ```
 
 Then open `http://127.0.0.1:8080` in your browser.
+
+## Tests
+
+```bash
+node tests/labels.test.js
+```

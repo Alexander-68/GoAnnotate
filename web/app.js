@@ -11,7 +11,9 @@ const osdEl = document.getElementById("osd");
 const MAX_RECENTS = 10;
 const MAX_UNDO = 50;
 
-const KPT_COUNT = 17;
+const KPT_COUNT = (typeof Labels !== "undefined" && Number.isFinite(Labels.KPT_COUNT))
+  ? Labels.KPT_COUNT
+  : 17;
 const KEYPOINT_NAMES = [
   "nose",
   "left eye",
@@ -333,6 +335,8 @@ async function openProject() {
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
       state.imageBitmap = null;
+      state.imageWidth = 0;
+      state.imageHeight = 0;
       state.imageName = "";
       state.annotations = [];
       state.baseAnnotations = [];
@@ -357,6 +361,9 @@ async function loadImage(index) {
   state.imageName = entry.name;
   state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
   state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
+  state.imageBitmap = null;
+  state.imageWidth = 0;
+  state.imageHeight = 0;
   state.annotations = [];
   state.baseAnnotations = [];
   state.dirty = false;
@@ -393,35 +400,10 @@ async function loadImage(index) {
 }
 
 function parseLabels(text) {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const annotations = [];
-  for (const line of lines) {
-    const parts = line.split(/\s+/).map(Number);
-    if (parts.length < 5 || Number.isNaN(parts[0])) {
-      continue;
-    }
-    const classId = Math.max(0, Math.round(parts[0]));
-    const bbox = {
-      cx: clamp(parts[1] || 0, 0, 1),
-      cy: clamp(parts[2] || 0, 0, 1),
-      w: clamp(parts[3] || 0, 0, 1),
-      h: clamp(parts[4] || 0, 0, 1)
-    };
-    const keypoints = [];
-    let hasPose = false;
-    if (parts.length >= 5 + 3) {
-      hasPose = true;
-    }
-    for (let i = 0; i < KPT_COUNT; i += 1) {
-      const base = 5 + i * 3;
-      const x = clamp(parts[base] || 0, 0, 1);
-      const y = clamp(parts[base + 1] || 0, 0, 1);
-      const v = clampVisibility(parts[base + 2]);
-      keypoints.push({ x, y, v });
-    }
-    annotations.push({ classId, bbox, keypoints, hasPose });
+  if (typeof Labels === "undefined" || typeof Labels.parseLabels !== "function") {
+    return [];
   }
-  return annotations;
+  return Labels.parseLabels(text);
 }
 
 function createEmptyKeypoints() {
@@ -433,25 +415,10 @@ function createEmptyKeypoints() {
 }
 
 function serializeLabels() {
-  return state.annotations.map((ann) => {
-    const items = [
-      ann.classId,
-      formatNum(ann.bbox.cx),
-      formatNum(ann.bbox.cy),
-      formatNum(ann.bbox.w),
-      formatNum(ann.bbox.h)
-    ];
-    if (ann.hasPose) {
-      for (const kp of ann.keypoints) {
-        items.push(formatNum(kp.x), formatNum(kp.y), clampVisibility(kp.v));
-      }
-    }
-    return items.join(" ");
-  }).join("\n");
-}
-
-function formatNum(value) {
-  return Number(value).toFixed(6);
+  if (typeof Labels === "undefined" || typeof Labels.serializeLabels !== "function") {
+    return "";
+  }
+  return Labels.serializeLabels(state.annotations);
 }
 
 function clamp(value, min, max) {
@@ -532,8 +499,7 @@ function drawAnnotation(annotation, isActive) {
 }
 
 function drawBBox(annotation, isActive) {
-  const scheme = getColorScheme();
-  const color = scheme.classColors[annotation.classId % scheme.classColors.length] || "#e4572e";
+  const color = getClassColor(annotation.classId);
   const { x, y, w, h } = bboxToPixels(annotation.bbox);
   ctx.strokeStyle = color;
   ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
@@ -574,8 +540,10 @@ function drawNewBBox() {
   if (w < 1 || h < 1) {
     return;
   }
-  const classId = Number.isFinite(state.lastClassId) ? state.lastClassId : 0;
-  const color = CLASS_COLORS[classId % CLASS_COLORS.length] || "#e4572e";
+  const classId = Number.isFinite(state.lastClassId)
+    ? Math.round(state.lastClassId)
+    : 0;
+  const color = getClassColor(classId);
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = toWorldSize(2);
@@ -630,7 +598,6 @@ function drawKeypoints(annotation, isActive) {
 
 function drawObjectLabels(indices) {
   const { dpr } = state.canvasSize;
-  const scheme = getColorScheme();
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.font = "18px 'Space Grotesk', 'Trebuchet MS', sans-serif";
@@ -643,7 +610,7 @@ function drawObjectLabels(indices) {
     }
     const { x, y } = bboxToPixels(annotation.bbox);
     const screenPos = worldToScreen(x, y);
-    const color = scheme.classColors[annotation.classId % scheme.classColors.length] || "#e4572e";
+    const color = getClassColor(annotation.classId);
     ctx.fillStyle = color;
     ctx.fillText(`${annotation.classId}:${idx + 1}`, screenPos.x + 4, screenPos.y + 4);
   }
@@ -1607,6 +1574,16 @@ function setStatus(text) {
 
 function getColorScheme() {
   return COLOR_SCHEMES[state.colorSchemeIndex] || COLOR_SCHEMES[0];
+}
+
+function getClassColor(classId) {
+  const scheme = getColorScheme();
+  const colors = scheme && Array.isArray(scheme.classColors) ? scheme.classColors : [];
+  const index = Number.isFinite(classId) ? Math.abs(Math.round(classId)) : 0;
+  if (colors.length === 0) {
+    return "#e4572e";
+  }
+  return colors[index % colors.length] || "#e4572e";
 }
 
 function cycleColorScheme() {
