@@ -14,19 +14,21 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Draw zoom-invariant object indices inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.
-- Show keypoint names on hover.
-- Auto-save changes to label files with fixed six-decimal precision.
-- Keep the OSD status marked as modified until switching images.
+- Show keypoint names with visibility (e.g., `left ear:1`) on hover.
+- Save changes to label files on image change with fixed six-decimal precision.
+- Keep the OSD status marked as modified until switching images or undoing all changes.
+- Allow undo per image and clear undo history when switching images.
 - Keep project controls in a collapsible left panel while the canvas fills the remaining space.
 
 ## Interactions
 
 Keyboard
-- `A` / `D`: Previous / next image.
-- `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2).
+- `A` / `D`: Previous / next image (saves current labels before switching).
+- `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
+- `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
 - `C` / `Z`: Select next / previous object.
 - `X`: Unselect object (show all).
-- `Delete`: Remove the selected object.
+- `Delete`: Remove the selected keypoint, or remove the selected object.
 
 Mouse
 - Left click: Select keypoint (priority) or bounding box.
@@ -34,7 +36,7 @@ Mouse
 - Drag bounding box corners: Resize the bounding box.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered).
-- Hover keypoint: Show the keypoint name tooltip.
+- Hover keypoint: Show the keypoint name and visibility tooltip.
 
 UI
 - `Load` opens the directory picker popup for Images Dir and Labels Dir.        

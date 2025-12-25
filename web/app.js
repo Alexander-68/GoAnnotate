@@ -12,6 +12,7 @@ const osdEl = document.getElementById("osd");
 const toggleSidebarBtn = document.getElementById("toggleSidebar");
 const appEl = document.querySelector(".app");
 const MAX_RECENTS = 10;
+const MAX_UNDO = 50;
 
 const KPT_COUNT = 17;
 const KEYPOINT_NAMES = [
@@ -57,6 +58,7 @@ const state = {
   imageWidth: 0,
   imageHeight: 0,
   annotations: [],
+  baseAnnotations: [],
   selection: {
     objectIndex: -1,
     keypointIndex: -1,
@@ -87,12 +89,13 @@ const state = {
     startOffsetX: 0,
     startOffsetY: 0,
     startCenter: null,
-    startCorners: null
+    startCorners: null,
+    snapshotTaken: false
   },
   spaceDown: false,
   dirty: false,
   modifiedSinceLoad: false,
-  saveTimer: null,
+  undoStack: [],
   osdCache: ""
 };
 
@@ -229,6 +232,12 @@ async function openProject() {
     setStatus("Provide both image and label directories.");
     return;
   }
+  if (state.dirty) {
+    await saveLabels();
+    if (state.dirty) {
+      return;
+    }
+  }
   closeModal();
 
   state.imagesDir = imagesDir;
@@ -252,6 +261,9 @@ async function openProject() {
       state.imageBitmap = null;
       state.imageName = "";
       state.annotations = [];
+      state.baseAnnotations = [];
+      state.undoStack = [];
+      state.dirty = false;
       state.modifiedSinceLoad = false;
       return;
     }
@@ -272,8 +284,10 @@ async function loadImage(index) {
   state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
   state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
   state.annotations = [];
+  state.baseAnnotations = [];
   state.dirty = false;
   state.modifiedSinceLoad = false;
+  state.undoStack = [];
 
   setStatus(`Loading ${entry.name}...`);
 
@@ -296,6 +310,7 @@ async function loadImage(index) {
       labelText = await labelResponse.text();
     }
     state.annotations = parseLabels(labelText);
+    state.baseAnnotations = cloneAnnotations(state.annotations);
     fitImage();
     setStatus(`${entry.name} (${state.index + 1}/${state.images.length})`);
   } catch (error) {
@@ -489,7 +504,8 @@ function drawKeypoints(annotation, isActive) {
     const radius = toWorldSize(isSelected ? 6 : baseRadius);
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = kp.v === 0 ? "rgba(29, 28, 26, 0.35)" : (VIS_COLORS[kp.v] || VIS_COLORS[2]);
+    const visColor = VIS_COLORS[kp.v] || VIS_COLORS[2];
+    ctx.strokeStyle = visColor;
     ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5);
     ctx.stroke();
     if (isSelected) {
@@ -526,7 +542,11 @@ function drawHoverLabel() {
   if (objectIndex < 0 || keypointIndex < 0) {
     return;
   }
-  const label = KEYPOINT_NAMES[keypointIndex] || `kp ${keypointIndex + 1}`;
+  const annotation = state.annotations[objectIndex];
+  const kp = annotation ? annotation.keypoints[keypointIndex] : null;
+  const visibility = kp ? clampVisibility(kp.v) : 0;
+  const name = KEYPOINT_NAMES[keypointIndex] || `kp ${keypointIndex + 1}`;
+  const label = `${name}:${visibility}`;
   const { dpr, width, height } = state.canvasSize;
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -666,6 +686,7 @@ function onMouseDown(event) {
   if (!state.imageBitmap) {
     return;
   }
+  state.dragging.snapshotTaken = false;
   clearHover();
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
 
@@ -744,6 +765,7 @@ function onMouseMove(event) {
     if (!kp) {
       return;
     }
+    ensureUndoSnapshot();
     const nx = clamp(worldX / state.imageWidth, 0, 1);
     const ny = clamp(worldY / state.imageHeight, 0, 1);
     kp.x = nx;
@@ -756,6 +778,7 @@ function onMouseMove(event) {
   }
 
   if (state.dragging.mode === "bboxMove") {
+    ensureUndoSnapshot();
     const dx = (worldX - state.dragging.startWorldX) / state.imageWidth;
     const dy = (worldY - state.dragging.startWorldY) / state.imageHeight;
     const bbox = annotation.bbox;
@@ -765,6 +788,7 @@ function onMouseMove(event) {
   }
 
   if (state.dragging.mode === "bboxCorner") {
+    ensureUndoSnapshot();
     const bbox = annotation.bbox;
     const corners = state.dragging.startCorners;
     const nx = clamp(worldX / state.imageWidth, 0, 1);
@@ -783,9 +807,6 @@ function onMouseMove(event) {
 }
 
 function onMouseUp() {
-  if (state.dragging.mode && state.dirty) {
-    scheduleSave();
-  }
   state.dragging.mode = null;
 }
 
@@ -813,6 +834,18 @@ function onKeyDown(event) {
     return;
   }
 
+  if (event.code === "Escape") {
+    event.preventDefault();
+    undo();
+    return;
+  }
+
+  if (event.code === "KeyZ" && event.ctrlKey) {
+    event.preventDefault();
+    undo();
+    return;
+  }
+
   if (event.code === "Space") {
     state.spaceDown = true;
     event.preventDefault();
@@ -820,12 +853,12 @@ function onKeyDown(event) {
 
   if (event.code === "KeyA") {
     event.preventDefault();
-    loadImage(state.index - 1);
+    changeImage(state.index - 1);
   }
 
   if (event.code === "KeyD") {
     event.preventDefault();
-    loadImage(state.index + 1);
+    changeImage(state.index + 1);
   }
 
   if (event.code === "KeyV") {
@@ -867,35 +900,138 @@ function cycleVisibility() {
   if (!kp) {
     return;
   }
+  pushUndo();
   kp.v = (kp.v + 1) % 3;
   obj.hasPose = true;
   markDirty();
-  scheduleSave();
 }
 
 function deleteSelection() {
   if (state.selection.objectIndex < 0) {
     return;
   }
+  const annotation = state.annotations[state.selection.objectIndex];
+  if (!annotation) {
+    return;
+  }
+  const kpIndex = state.selection.keypointIndex;
+  const kp = kpIndex >= 0 ? annotation.keypoints[kpIndex] : null;
+  if (kp) {
+    pushUndo();
+    kp.v = 0;
+    annotation.hasPose = true;
+    markDirty();
+    return;
+  }
+  pushUndo();
   state.annotations.splice(state.selection.objectIndex, 1);
   clearSelection();
   markDirty();
-  scheduleSave();
+}
+
+function cloneAnnotations(annotations) {
+  return annotations.map((ann) => ({
+    classId: ann.classId,
+    bbox: {
+      cx: ann.bbox.cx,
+      cy: ann.bbox.cy,
+      w: ann.bbox.w,
+      h: ann.bbox.h
+    },
+    keypoints: ann.keypoints.map((kp) => ({
+      x: kp.x,
+      y: kp.y,
+      v: kp.v
+    })),
+    hasPose: ann.hasPose
+  }));
+}
+
+function pushUndo() {
+  state.undoStack.push(cloneAnnotations(state.annotations));
+  if (state.undoStack.length > MAX_UNDO) {
+    state.undoStack.shift();
+  }
+}
+
+function ensureUndoSnapshot() {
+  if (state.dragging.snapshotTaken) {
+    return;
+  }
+  pushUndo();
+  state.dragging.snapshotTaken = true;
+}
+
+function undo() {
+  if (state.undoStack.length === 0) {
+    return;
+  }
+  const snapshot = state.undoStack.pop();
+  state.annotations = snapshot;
+  clearSelection();
+  if (annotationsEqual(state.annotations, state.baseAnnotations)) {
+    state.dirty = false;
+    state.modifiedSinceLoad = false;
+    setStatus(`${state.imageName} (${state.index + 1}/${state.images.length})`);
+    return;
+  }
+  markDirty();
+}
+
+function annotationsEqual(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i += 1) {
+    const a = left[i];
+    const b = right[i];
+    if (!a || !b) {
+      return false;
+    }
+    if (a.classId !== b.classId || a.hasPose !== b.hasPose) {
+      return false;
+    }
+    if (!bboxEqual(a.bbox, b.bbox)) {
+      return false;
+    }
+    if (a.keypoints.length !== b.keypoints.length) {
+      return false;
+    }
+    for (let k = 0; k < a.keypoints.length; k += 1) {
+      const ka = a.keypoints[k];
+      const kb = b.keypoints[k];
+      if (!ka || !kb) {
+        return false;
+      }
+      if (ka.x !== kb.x || ka.y !== kb.y || ka.v !== kb.v) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function bboxEqual(a, b) {
+  return a.cx === b.cx && a.cy === b.cy && a.w === b.w && a.h === b.h;
+}
+
+async function changeImage(nextIndex) {
+  if (nextIndex < 0 || nextIndex >= state.images.length) {
+    return;
+  }
+  if (state.dirty) {
+    await saveLabels();
+    if (state.dirty) {
+      return;
+    }
+  }
+  await loadImage(nextIndex);
 }
 
 function markDirty() {
   state.dirty = true;
   state.modifiedSinceLoad = true;
   setStatus("Unsaved changes...");
-}
-
-function scheduleSave() {
-  if (state.saveTimer) {
-    clearTimeout(state.saveTimer);
-  }
-  state.saveTimer = setTimeout(() => {
-    saveLabels();
-  }, 300);
 }
 
 async function saveLabels() {
