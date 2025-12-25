@@ -6,5 +6,5 @@ Maintain README.md file updated with description, functions, interactions (keybo
 
 
 
-When writing code, consider simplistic, minimalistic approach.
+
 
