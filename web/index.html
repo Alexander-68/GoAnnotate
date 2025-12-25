@@ -8,36 +8,22 @@
 </head>
 <body>
   <div class="app">
-    <div class="layout">
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <button class="icon-btn" id="toggleSidebar" type="button" aria-label="Collapse sidebar" aria-pressed="false">
-            ≡
-          </button>
-          <div class="brand">
-            <div class="brand-title">GoAnnotate</div>
-            <div class="brand-sub">YOLO11 detections + 17-keypoint pose</div>
-          </div>
-        </div>
-        <div class="sidebar-content">
-          <button id="loadBtn" class="btn ghost">Load</button>
-          <div class="status" id="status">Idle</div>
-        </div>
-      </aside>
-      <main class="workspace">
-        <div class="osd" id="osd"></div>
-        <canvas id="canvas"></canvas>
-      </main>
-    </div>
+    <main class="workspace">
+      <button id="openModalBtn" class="corner-btn btn ghost" type="button">Load</button>
+      <div class="osd" id="osd"></div>
+      <canvas id="canvas"></canvas>
+    </main>
   </div>
   <div class="modal hidden" id="loadModal" aria-hidden="true">
     <div class="modal-scrim" data-close="true"></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
-        <div class="modal-title" id="modalTitle">Load Project</div>
+        <a class="modal-title modal-link" id="modalTitle" href="https://github.com/Alexander-68/GoAnnotate" target="_blank" rel="noopener">GoAnnotate</a>
         <button class="modal-close" type="button" data-close="true">X</button>
       </div>
       <div class="modal-body">
+        <p class="modal-desc">Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.</p>
+        <div class="modal-section-title">Project Paths</div>
         <label class="field">
           <span>Images Dir</span>
           <input id="imagesDir" type="text" list="imagesDirList" placeholder="C:\data\images" />

@@ -4,13 +4,10 @@ const imagesDirInput = document.getElementById("imagesDir");
 const labelsDirInput = document.getElementById("labelsDir");
 const imagesDirList = document.getElementById("imagesDirList");
 const labelsDirList = document.getElementById("labelsDirList");
-const loadBtn = document.getElementById("loadBtn");
+const openModalBtn = document.getElementById("openModalBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
-const statusEl = document.getElementById("status");
 const osdEl = document.getElementById("osd");
-const toggleSidebarBtn = document.getElementById("toggleSidebar");
-const appEl = document.querySelector(".app");
 const MAX_RECENTS = 10;
 const MAX_UNDO = 50;
 
@@ -96,7 +93,8 @@ const state = {
   dirty: false,
   modifiedSinceLoad: false,
   undoStack: [],
-  osdCache: ""
+  osdCache: "",
+  statusText: "Idle"
 };
 
 const storageKey = {
@@ -111,20 +109,12 @@ function init() {
   labelsDirInput.value = localStorage.getItem(storageKey.labelsDir) || "";
   refreshRecents();
 
-  loadBtn.addEventListener("click", () => {
+  openModalBtn.addEventListener("click", () => {
     openModal();
   });
 
   confirmLoadBtn.addEventListener("click", () => {
     openProject();
-  });
-
-  toggleSidebarBtn.addEventListener("click", () => {
-    appEl.classList.toggle("sidebar-collapsed");
-    const isCollapsed = appEl.classList.contains("sidebar-collapsed");
-    toggleSidebarBtn.setAttribute("aria-pressed", isCollapsed ? "true" : "false");
-    toggleSidebarBtn.setAttribute("aria-label", isCollapsed ? "Expand sidebar" : "Collapse sidebar");
-    resizeCanvas();
   });
 
   imagesDirInput.addEventListener("keydown", (event) => {
@@ -159,6 +149,7 @@ function init() {
   });
 
   resizeCanvas();
+  openModal();
   requestAnimationFrame(render);
 }
 
@@ -591,10 +582,11 @@ function updateOsd() {
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
     : "Resolution: -";
   const zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
-  const modLine = `Status: ${state.modifiedSinceLoad ? "Modified" : "Untouched"}`;
+  const statusLine = `Status: ${state.statusText}`;
+  const modLine = `Modified: ${state.modifiedSinceLoad ? "Yes" : "No"}`;
   const objectsLines = buildObjectLines();
   const selectedLines = buildSelectedLines();
-  const lines = [fileLine, countLine, resLine, zoomLine, modLine, ...objectsLines, ...selectedLines];
+  const lines = [fileLine, countLine, resLine, zoomLine, statusLine, modLine, ...objectsLines, ...selectedLines];
   const text = lines.join("\n");
   if (text !== state.osdCache) {
     osdEl.textContent = text;
@@ -1250,7 +1242,7 @@ function getMousePos(event) {
 }
 
 function setStatus(text) {
-  statusEl.textContent = text;
+  state.statusText = text;
 }
 
 init();

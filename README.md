@@ -18,7 +18,7 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Save changes to label files on image change with fixed six-decimal precision.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Allow undo per image and clear undo history when switching images.
-- Keep project controls in a collapsible left panel while the canvas fills the remaining space.
+- Use a full-screen canvas with overlay OSD and a top-right Load button to open the project popup.
 
 ## Interactions
 
@@ -39,9 +39,10 @@ Mouse
 - Hover keypoint: Show the keypoint name and visibility tooltip.
 
 UI
-- `Load` opens the directory picker popup for Images Dir and Labels Dir.        
-- Recent folders appear as a dropdown suggestion for each directory field.      
-- The sidebar toggle collapses/expands the left panel.
+- The app opens with the project popup visible on start.
+- The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
+- Recent folders appear as a dropdown suggestion for each directory field.
+- The GoAnnotate title in the popup links to the project repository.
 
 ## Run
 
