@@ -399,8 +399,23 @@ async function loadImage(index) {
   }
 }
 
+function labelsModuleAvailable() {
+  return typeof Labels !== "undefined"
+    && Labels
+    && typeof Labels.parseLabels === "function"
+    && typeof Labels.serializeLabels === "function";
+}
+
+function ensureLabelsModule() {
+  if (!labelsModuleAvailable()) {
+    setStatus("Labels module missing. Refresh the page.");
+    return false;
+  }
+  return true;
+}
+
 function parseLabels(text) {
-  if (typeof Labels === "undefined" || typeof Labels.parseLabels !== "function") {
+  if (!ensureLabelsModule()) {
     return [];
   }
   return Labels.parseLabels(text);
@@ -415,8 +430,8 @@ function createEmptyKeypoints() {
 }
 
 function serializeLabels() {
-  if (typeof Labels === "undefined" || typeof Labels.serializeLabels !== "function") {
-    return "";
+  if (!ensureLabelsModule()) {
+    return null;
   }
   return Labels.serializeLabels(state.annotations);
 }
@@ -1353,10 +1368,14 @@ async function saveLabels() {
     return;
   }
   const labelName = `${stripExt(state.imageName)}.txt`;
+  const content = serializeLabels();
+  if (content === null) {
+    return;
+  }
   const payload = {
     labelsDir: state.labelsDir,
     file: labelName,
-    content: serializeLabels()
+    content
   };
 
   try {
