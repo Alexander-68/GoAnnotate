@@ -17,10 +17,11 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Show keypoint names with visibility (e.g., `left ear:1`) on hover.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
 - Switch between multiple annotation color schemes for visibility.
-- Save changes to label files on image change with fixed six-decimal precision. 
+- Save changes to label files on image change with fixed six-decimal precision.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Allow undo per image and clear undo history when switching images.
 - Use a full-screen canvas with overlay OSD and a top-right Load button to open the project popup.
+- Log loaded dataset paths with total and labeled image counts on load.
 
 ## Interactions
 
@@ -36,12 +37,12 @@ Keyboard
 
 Mouse
 - Left click: Select keypoint (priority) or bounding box.
-- Left drag: Move the selected keypoint or bounding box.
-- Drag bounding box corners: Resize the bounding box.
+- Left drag: Move the selected keypoint.
+- Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object (auto-selects an unused name).
 - Right drag or Space + drag: Pan the view.
-- Mouse wheel: Zoom (cursor-centered).
+- Mouse wheel: Zoom (cursor-centered, faster step).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
 
 UI

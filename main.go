@@ -98,6 +98,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var images []imageEntry
+	labeledCount := 0
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -112,6 +113,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 			labelPath := filepath.Join(labelsAbs, trimExt(name)+".txt")
 			if _, err := os.Stat(labelPath); err == nil {
 				labelExists = true
+				labeledCount++
 			}
 		}
 		images = append(images, imageEntry{Name: name, LabelExists: labelExists})
@@ -121,6 +123,8 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(images[i].Name) < strings.ToLower(images[j].Name)
 	})
 
+	log.Printf("Loaded dataset imagesDir=%q labelsDir=%q images=%d labeled=%d",
+		imagesAbs, labelsAbs, len(images), labeledCount)
 	writeJSON(w, listResponse{Images: images})
 }
 

@@ -170,7 +170,6 @@ const state = {
     currentWorldY: 0,
     startOffsetX: 0,
     startOffsetY: 0,
-    startCenter: null,
     startCorners: null,
     snapshotTaken: false
   },
@@ -840,11 +839,6 @@ function onMouseDown(event) {
   const bboxPick = pickBBox(screenX, screenY);
   if (bboxPick) {
     setSelection(bboxPick.objectIndex, -1, null);
-    state.dragging.mode = "bboxMove";
-    const bbox = state.annotations[bboxPick.objectIndex].bbox;
-    state.dragging.startCenter = { cx: bbox.cx, cy: bbox.cy };
-    state.dragging.startWorldX = worldX;
-    state.dragging.startWorldY = worldY;
     return;
   }
 
@@ -902,16 +896,6 @@ function onMouseMove(event) {
     markDirty();
   }
 
-  if (state.dragging.mode === "bboxMove") {
-    ensureUndoSnapshot();
-    const dx = (worldX - state.dragging.startWorldX) / state.imageWidth;
-    const dy = (worldY - state.dragging.startWorldY) / state.imageHeight;
-    const bbox = annotation.bbox;
-    bbox.cx = clamp(state.dragging.startCenter.cx + dx, bbox.w / 2, 1 - bbox.w / 2);
-    bbox.cy = clamp(state.dragging.startCenter.cy + dy, bbox.h / 2, 1 - bbox.h / 2);
-    markDirty();
-  }
-
   if (state.dragging.mode === "bboxCorner") {
     ensureUndoSnapshot();
     const bbox = annotation.bbox;
@@ -946,7 +930,7 @@ function onWheel(event) {
   }
   event.preventDefault();
   const delta = Math.sign(event.deltaY);
-  const zoomFactor = delta > 0 ? 0.9 : 1.1;
+  const zoomFactor = delta > 0 ? 0.85 : 1.15;
   const { screenX, screenY } = getMousePos(event);
   const worldBefore = screenToWorld(screenX, screenY);
   const nextScale = clamp(state.view.scale * zoomFactor, 0.1, 18);
