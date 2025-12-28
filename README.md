@@ -26,7 +26,9 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 ## Interactions
 
 Keyboard
-- `A` / `D`: Previous / next image (saves current labels before switching).
+- `A` / `D`: Previous / next image (saves current labels before switching).     
+- `Home` / `End`: Jump to the first / last image.
+- `PageUp` / `PageDown`: Jump 100 images backward / forward.
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
 - `B`: Cycle annotation color schemes.
@@ -38,6 +40,7 @@ Keyboard
 Mouse
 - Left click: Select keypoint (priority) or bounding box.
 - Left drag: Move the selected keypoint.
+- Left drag on empty space or bbox: Pan the view (when not dragging a keypoint or bbox corner).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object (auto-selects an unused name).

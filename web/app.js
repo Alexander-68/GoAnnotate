@@ -121,6 +121,7 @@ const COLOR_SCHEMES = [
   }
 ];
 const MIN_BBOX_PIXELS = 4;
+const PAN_DRAG_THRESHOLD = 3;
 
 const state = {
   imagesDir: "",
@@ -171,7 +172,8 @@ const state = {
     startOffsetX: 0,
     startOffsetY: 0,
     startCorners: null,
-    snapshotTaken: false
+    snapshotTaken: false,
+    pendingSelection: null
   },
   spaceDown: false,
   dirty: false,
@@ -782,6 +784,7 @@ function onMouseDown(event) {
     return;
   }
   state.dragging.snapshotTaken = false;
+  state.dragging.pendingSelection = null;
   clearHover();
   const { screenX, screenY, worldX, worldY } = getMousePos(event);
   state.lastMouse.screenX = screenX;
@@ -837,12 +840,14 @@ function onMouseDown(event) {
   }
 
   const bboxPick = pickBBox(screenX, screenY);
-  if (bboxPick) {
-    setSelection(bboxPick.objectIndex, -1, null);
-    return;
-  }
-
-  clearSelection();
+  state.dragging.mode = "pendingPan";
+  state.dragging.startX = screenX;
+  state.dragging.startY = screenY;
+  state.dragging.startOffsetX = state.view.offsetX;
+  state.dragging.startOffsetY = state.view.offsetY;
+  state.dragging.pendingSelection = bboxPick
+    ? { objectIndex: bboxPick.objectIndex, keypointIndex: -1, corner: null }
+    : null;
 }
 
 function onMouseMove(event) {
@@ -859,6 +864,16 @@ function onMouseMove(event) {
   }
 
   clearHover();
+
+  if (state.dragging.mode === "pendingPan") {
+    const dx = screenX - state.dragging.startX;
+    const dy = screenY - state.dragging.startY;
+    if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+      return;
+    }
+    state.dragging.mode = "pan";
+    state.dragging.pendingSelection = null;
+  }
 
   if (state.dragging.mode === "pan") {
     const dx = screenX - state.dragging.startX;
@@ -916,6 +931,22 @@ function onMouseMove(event) {
 }
 
 function onMouseUp(event) {
+  if (state.dragging.mode === "pendingPan") {
+    const { screenX, screenY } = getMousePos(event);
+    const dx = screenX - state.dragging.startX;
+    const dy = screenY - state.dragging.startY;
+    if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+      if (state.dragging.pendingSelection) {
+        const { objectIndex, keypointIndex, corner } = state.dragging.pendingSelection;
+        setSelection(objectIndex, keypointIndex, corner);
+      } else {
+        clearSelection();
+      }
+    }
+    state.dragging.pendingSelection = null;
+    state.dragging.mode = null;
+    return;
+  }
   if (state.dragging.mode === "newBBox") {
     finishNewBBox(event);
     state.dragging.mode = null;
@@ -973,6 +1004,26 @@ function onKeyDown(event) {
   if (event.code === "KeyD") {
     event.preventDefault();
     changeImage(state.index + 1);
+  }
+
+  if (event.code === "Home") {
+    event.preventDefault();
+    changeImage(0);
+  }
+
+  if (event.code === "End") {
+    event.preventDefault();
+    changeImage(state.images.length - 1);
+  }
+
+  if (event.code === "PageUp") {
+    event.preventDefault();
+    changeImage(state.index - 100);
+  }
+
+  if (event.code === "PageDown") {
+    event.preventDefault();
+    changeImage(state.index + 100);
   }
 
   if (event.code === "KeyV") {
