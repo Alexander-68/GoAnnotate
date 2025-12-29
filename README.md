@@ -48,6 +48,15 @@ Mouse
 - Mouse wheel: Zoom (cursor-centered, faster step).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
 
+Touch
+- Swipe right: Previous image (saves current labels before switching).
+- Swipe left: Next image (saves current labels before switching).
+- Tap a bounding box: Select the object (tap empty space to clear selection).
+- Drag a keypoint: Move the selected keypoint.
+- Drag a bounding box corner: Resize the bounding box.
+- One-finger drag: Pan the view.
+- Pinch: Zoom in or out (centered on the pinch midpoint).
+
 UI
 - The app opens with the project popup visible on start.
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.

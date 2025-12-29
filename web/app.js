@@ -122,6 +122,9 @@ const COLOR_SCHEMES = [
 ];
 const MIN_BBOX_PIXELS = 4;
 const PAN_DRAG_THRESHOLD = 3;
+const TOUCH_SWIPE_THRESHOLD = 80;
+const TOUCH_SWIPE_MAX_TIME = 350;
+const TOUCH_SWIPE_AXIS_RATIO = 1.3;
 
 const state = {
   imagesDir: "",
@@ -175,6 +178,19 @@ const state = {
     snapshotTaken: false,
     pendingSelection: null
   },
+  touch: {
+    mode: null,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    startTime: 0,
+    startOffsetX: 0,
+    startOffsetY: 0,
+    startScale: 1,
+    startDist: 0,
+    swipeEligible: false
+  },
   spaceDown: false,
   dirty: false,
   modifiedSinceLoad: false,
@@ -221,6 +237,10 @@ function init() {
   window.addEventListener("mouseup", onMouseUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+  canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+  canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+  canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+  canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.close) {
@@ -970,6 +990,235 @@ function onWheel(event) {
   state.view.offsetY = screenY - worldBefore.y * nextScale;
 }
 
+function onTouchStart(event) {
+  if (!state.imageBitmap) {
+    return;
+  }
+  event.preventDefault();
+  clearHover();
+  state.dragging.mode = null;
+  state.dragging.snapshotTaken = false;
+  state.dragging.pendingSelection = null;
+  const touches = getTouchPoints(event);
+  if (touches.length === 1) {
+    const touch = touches[0];
+    const screenX = touch.x;
+    const screenY = touch.y;
+    const world = screenToWorld(screenX, screenY);
+    state.lastMouse.screenX = screenX;
+    state.lastMouse.screenY = screenY;
+
+    const keyPick = pickKeypoint(screenX, screenY);
+    if (keyPick) {
+      setSelection(keyPick.objectIndex, keyPick.keypointIndex, null);
+      state.dragging.mode = "keypoint";
+      state.dragging.startWorldX = world.x;
+      state.dragging.startWorldY = world.y;
+      state.touch.mode = "keypoint";
+      state.touch.swipeEligible = false;
+      return;
+    }
+
+    const cornerPick = pickCorner(screenX, screenY);
+    if (cornerPick) {
+      setSelection(cornerPick.objectIndex, -1, cornerPick.corner);
+      state.dragging.mode = "bboxCorner";
+      state.dragging.startCorners = cornerPick.corners;
+      state.touch.mode = "bboxCorner";
+      state.touch.swipeEligible = false;
+      return;
+    }
+
+    const bboxPick = pickBBox(screenX, screenY);
+    state.dragging.mode = "pendingPan";
+    state.dragging.startX = screenX;
+    state.dragging.startY = screenY;
+    state.dragging.startOffsetX = state.view.offsetX;
+    state.dragging.startOffsetY = state.view.offsetY;
+    state.dragging.pendingSelection = bboxPick
+      ? { objectIndex: bboxPick.objectIndex, keypointIndex: -1, corner: null }
+      : null;
+    state.touch.mode = "pendingPan";
+    state.touch.swipeEligible = !bboxPick;
+    state.touch.startX = touch.x;
+    state.touch.startY = touch.y;
+    state.touch.lastX = touch.x;
+    state.touch.lastY = touch.y;
+    state.touch.startOffsetX = state.view.offsetX;
+    state.touch.startOffsetY = state.view.offsetY;
+    state.touch.startTime = Date.now();
+    state.touch.swipeEligible = true;
+    return;
+  }
+  if (touches.length === 2) {
+    const dist = touchDistance(touches[0], touches[1]);
+    state.dragging.mode = null;
+    state.touch.mode = "pinch";
+    state.touch.startDist = dist;
+    state.touch.startScale = state.view.scale;
+    state.touch.startTime = Date.now();
+    state.touch.swipeEligible = false;
+  }
+}
+
+function onTouchMove(event) {
+  if (!state.imageBitmap || !state.touch.mode) {
+    return;
+  }
+  event.preventDefault();
+  const touches = getTouchPoints(event);
+  if (touches.length === 1) {
+    const touch = touches[0];
+    const screenX = touch.x;
+    const screenY = touch.y;
+    const world = screenToWorld(screenX, screenY);
+    state.touch.lastX = screenX;
+    state.touch.lastY = screenY;
+
+    if (state.touch.mode === "pendingPan") {
+      const dx = screenX - state.dragging.startX;
+      const dy = screenY - state.dragging.startY;
+      if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+        return;
+      }
+      state.touch.mode = "pan";
+      state.dragging.mode = "pan";
+      state.dragging.pendingSelection = null;
+    }
+
+    if (state.touch.mode === "pan") {
+      const dx = screenX - state.touch.startX;
+      const dy = screenY - state.touch.startY;
+      state.view.offsetX = state.touch.startOffsetX + dx;
+      state.view.offsetY = state.touch.startOffsetY + dy;
+      return;
+    }
+
+    if (state.touch.mode === "keypoint") {
+      const annotation = state.annotations[state.selection.objectIndex];
+      if (!annotation) {
+        return;
+      }
+      const kp = annotation.keypoints[state.selection.keypointIndex];
+      if (!kp) {
+        return;
+      }
+      ensureUndoSnapshot();
+      const nx = clamp(world.x / state.imageWidth, 0, 1);
+      const ny = clamp(world.y / state.imageHeight, 0, 1);
+      kp.x = nx;
+      kp.y = ny;
+      if (kp.v === 0) {
+        kp.v = 2;
+        annotation.hasPose = true;
+      }
+      markDirty();
+      return;
+    }
+
+    if (state.touch.mode === "bboxCorner") {
+      const annotation = state.annotations[state.selection.objectIndex];
+      if (!annotation) {
+        return;
+      }
+      ensureUndoSnapshot();
+      const bbox = annotation.bbox;
+      const corners = state.dragging.startCorners;
+      if (!corners) {
+        return;
+      }
+      const nx = clamp(world.x / state.imageWidth, 0, 1);
+      const ny = clamp(world.y / state.imageHeight, 0, 1);
+      const updated = updateCorners(corners, state.selection.corner, nx, ny);
+      const minX = clamp(Math.min(updated.x1, updated.x2), 0, 1);
+      const maxX = clamp(Math.max(updated.x1, updated.x2), 0, 1);
+      const minY = clamp(Math.min(updated.y1, updated.y2), 0, 1);
+      const maxY = clamp(Math.max(updated.y1, updated.y2), 0, 1);
+      bbox.cx = (minX + maxX) / 2;
+      bbox.cy = (minY + maxY) / 2;
+      bbox.w = Math.max(0.0001, maxX - minX);
+      bbox.h = Math.max(0.0001, maxY - minY);
+      markDirty();
+      return;
+    }
+  }
+  if (touches.length === 2) {
+    const center = touchCenter(touches[0], touches[1]);
+    const dist = touchDistance(touches[0], touches[1]);
+    if (!Number.isFinite(dist) || dist <= 0 || state.touch.startDist <= 0) {
+      return;
+    }
+    state.touch.mode = "pinch";
+    state.touch.swipeEligible = false;
+    const worldBefore = screenToWorld(center.x, center.y);
+    const nextScale = clamp(state.touch.startScale * (dist / state.touch.startDist), 0.1, 18);
+    state.view.scale = nextScale;
+    state.view.offsetX = center.x - worldBefore.x * nextScale;
+    state.view.offsetY = center.y - worldBefore.y * nextScale;
+  }
+}
+
+function onTouchEnd(event) {
+  if (!state.imageBitmap || !state.touch.mode) {
+    return;
+  }
+  event.preventDefault();
+  const remainingTouches = getTouchPoints(event);
+  if (remainingTouches.length === 1) {
+    const touch = remainingTouches[0];
+    state.touch.mode = "pan";
+    state.touch.startX = touch.x;
+    state.touch.startY = touch.y;
+    state.touch.lastX = touch.x;
+    state.touch.lastY = touch.y;
+    state.touch.startOffsetX = state.view.offsetX;
+    state.touch.startOffsetY = state.view.offsetY;
+    state.touch.startTime = Date.now();
+    state.dragging.mode = "pan";
+    return;
+  }
+  if (remainingTouches.length > 1) {
+    return;
+  }
+  if (state.touch.mode === "pendingPan") {
+    const dx = state.touch.lastX - state.touch.startX;
+    const dy = state.touch.lastY - state.touch.startY;
+    if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+      if (state.dragging.pendingSelection) {
+        const { objectIndex, keypointIndex, corner } = state.dragging.pendingSelection;
+        setSelection(objectIndex, keypointIndex, corner);
+      } else {
+        clearSelection();
+      }
+    }
+  }
+  if (state.touch.mode === "pan" && event.changedTouches && event.changedTouches.length) {
+    const rect = canvas.getBoundingClientRect();
+    const changed = event.changedTouches[0];
+    state.touch.lastX = changed.clientX - rect.left;
+    state.touch.lastY = changed.clientY - rect.top;
+  }
+  if (state.touch.mode === "pan" && state.touch.swipeEligible) {
+    const dt = Date.now() - state.touch.startTime;
+    const dx = state.touch.lastX - state.touch.startX;
+    const dy = state.touch.lastY - state.touch.startY;
+    if (dt <= TOUCH_SWIPE_MAX_TIME
+      && Math.abs(dx) >= TOUCH_SWIPE_THRESHOLD
+      && Math.abs(dx) >= Math.abs(dy) * TOUCH_SWIPE_AXIS_RATIO) {
+      if (dx > 0) {
+        changeImage(state.index - 1);
+      } else {
+        changeImage(state.index + 1);
+      }
+    }
+  }
+  state.dragging.mode = null;
+  state.dragging.pendingSelection = null;
+  state.dragging.snapshotTaken = false;
+  state.touch.mode = null;
+  state.touch.swipeEligible = false;
+}
+
 function onKeyDown(event) {
   if (event.code === "Escape" && !loadModal.classList.contains("hidden")) {
     closeModal();
@@ -1619,6 +1868,26 @@ function getMousePos(event) {
     screenY,
     worldX: world.x,
     worldY: world.y
+  };
+}
+
+function getTouchPoints(event) {
+  const rect = canvas.getBoundingClientRect();
+  const touches = event.touches ? Array.from(event.touches) : [];
+  return touches.map((touch) => ({
+    x: touch.clientX - rect.left,
+    y: touch.clientY - rect.top
+  }));
+}
+
+function touchDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function touchCenter(a, b) {
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2
   };
 }
 

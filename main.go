@@ -51,7 +51,7 @@ func main() {
 	fileServer := http.FileServer(http.FS(webFS))
 	mux.Handle("/", fileServer)
 
-	addr := "127.0.0.1:8080"
+	addr := "0.0.0.0:8080"
 	log.Printf("GoAnnotate running at http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, logRequests(mux)))
 }
