@@ -745,6 +745,10 @@ function buildSelectedLines() {
   if (!obj) {
     return lines;
   }
+
+  const { w, h } = bboxToPixels(obj.bbox);
+  lines.push(`${obj.classId}:${state.selection.objectIndex + 1} size ${Math.round(w)} x ${Math.round(h)}`);
+
   if (obj.hasPose) {
     const total = obj.keypoints.length;
     let visible = 0;
@@ -754,9 +758,14 @@ function buildSelectedLines() {
       }
     }
     lines.push(`Keypoints: ${visible}/${total}`);
+
+    if (state.selection.keypointIndex >= 0) {
+      const kp = obj.keypoints[state.selection.keypointIndex];
+      const visibility = kp ? clampVisibility(kp.v) : 0;
+      const name = KEYPOINT_NAMES[state.selection.keypointIndex] || `kp ${state.selection.keypointIndex + 1}`;
+      lines.push(`${name}:${visibility}`);
+    }
   }
-  const { w, h } = bboxToPixels(obj.bbox);
-  lines.push(`Size: ${Math.round(w)}x${Math.round(h)}px`);
   return lines;
 }
 
