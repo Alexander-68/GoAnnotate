@@ -22,6 +22,11 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Allow undo per image and clear undo history when switching images.
 - Use a full-screen canvas with overlay OSD and a top-right Load button to open the project popup.
 - Log loaded dataset paths with total and labeled image counts on load.
+- Automatically suggest a Labels Directory when an Images Directory is selected in the UI, prioritized as follows:
+    1.  YOLO-style: `.../labels/{subdir}` if images are in `.../images/{subdir}`.
+    2.  Subdirectory: `imagesDir/labels`.
+    3.  Sibling: `../labels`.
+    4.  Parent: `..`.
 
 ## Interactions
 
@@ -75,6 +80,12 @@ By default, the server listens on `127.0.0.1:8080`. You can configure the addres
 
 ```bash
 go run . -ip 0.0.0.0 -port 9090
+```
+
+To restrict directory browsing to a specific path (e.g., for security or convenience), use the `-data-root` flag:
+
+```bash
+go run . -data-root C:\my\data\folder
 ```
 
 Then open `http://127.0.0.1:8080` (or your configured address) in your browser.

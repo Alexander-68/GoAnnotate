@@ -26,16 +26,38 @@
       <div class="modal-body">
         <p class="modal-desc">Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.</p>
         <div class="modal-section-title">Project Paths</div>
-        <label class="field">
-          <span>Images Dir</span>
-          <input id="imagesDir" type="text" list="imagesDirList" placeholder="C:\data\images" />
-        </label>
+        
+        <div class="field">
+          <div class="field-header">
+            <span>Images Dir</span>
+            <button id="browseImagesBtn" class="btn ghost btn-sm" type="button">Browse</button>
+          </div>
+          <input id="imagesDir" type="text" list="imagesDirList" placeholder="C:\data\images" class="full-width-input" />
+        </div>
         <datalist id="imagesDirList"></datalist>
-        <label class="field">
-          <span>Labels Dir</span>
-          <input id="labelsDir" type="text" list="labelsDirList" placeholder="C:\data\labels" />
-        </label>
-        <datalist id="labelsDirList"></datalist>
+
+        <div id="labelsSection" class="hidden">
+          <div class="field">
+            <div class="field-header">
+              <span>Labels Dir</span>
+              <button id="browseLabelsBtn" class="btn ghost btn-sm" type="button">Browse</button>
+            </div>
+            <input id="labelsDir" type="text" list="labelsDirList" placeholder="C:\data\labels" class="full-width-input" />
+          </div>
+          <datalist id="labelsDirList"></datalist>
+        </div>
+
+        <div id="folderPicker" class="folder-picker hidden">
+          <div class="picker-header">
+            <button id="pickerBackBtn" class="btn ghost btn-sm" type="button">&larr; Up</button>
+            <span id="pickerCurrentPath" class="picker-path"></span>
+          </div>
+          <div id="pickerList" class="picker-list"></div>
+          <div class="picker-actions">
+            <button id="pickerCancelBtn" class="btn ghost btn-sm" type="button">Cancel</button>
+            <button id="pickerSelectBtn" class="btn ghost btn-sm" type="button">Select Current</button>
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button id="confirmLoadBtn" class="btn ghost" type="button">Load</button>

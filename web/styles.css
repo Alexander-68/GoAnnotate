@@ -162,7 +162,7 @@ body::before {
 
 .modal-card {
   position: relative;
-  width: min(520px, 92vw);
+  width: min(780px, 92vw);
   background: #fff;
   border-radius: 16px;
   padding: 18px 20px 20px;
@@ -229,6 +229,79 @@ body::before {
   justify-content: flex-end;
 }
 
+.field-with-btn {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field-with-btn input {
+  flex: 1;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 11px;
+}
+
+.folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  margin-top: 10px;
+}
+
+.folder-picker.hidden {
+  display: none;
+}
+
+.picker-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 8px;
+}
+
+.picker-path {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+}
+
+.picker-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.picker-item:hover {
+  background: rgba(29, 111, 163, 0.1);
+}
+
+.picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -242,4 +315,14 @@ body::before {
   .field input {
     width: min(360px, 80vw);
   }
+}
+
+.field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.full-width-input {
+  width: 100%;
 }

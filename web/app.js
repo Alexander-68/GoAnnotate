@@ -7,7 +7,20 @@ const labelsDirList = document.getElementById("labelsDirList");
 const openModalBtn = document.getElementById("openModalBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
+const browseImagesBtn = document.getElementById("browseImagesBtn");
+const browseLabelsBtn = document.getElementById("browseLabelsBtn");
+const folderPicker = document.getElementById("folderPicker");
+const pickerList = document.getElementById("pickerList");
+const pickerCurrentPath = document.getElementById("pickerCurrentPath");
+const pickerBackBtn = document.getElementById("pickerBackBtn");
+const pickerCancelBtn = document.getElementById("pickerCancelBtn");
+const pickerSelectBtn = document.getElementById("pickerSelectBtn");
 const osdEl = document.getElementById("osd");
+const labelsSection = document.getElementById("labelsSection");
+
+let pickerActiveTarget = null;
+let pickerCurrentPathVal = "";
+
 const MAX_RECENTS = 10;
 const MAX_UNDO = 50;
 
@@ -219,10 +232,41 @@ function init() {
     openProject();
   });
 
+  browseImagesBtn.addEventListener("click", () => {
+    openPicker(imagesDirInput);
+  });
+
+  browseLabelsBtn.addEventListener("click", () => {
+    openPicker(labelsDirInput);
+  });
+
+  pickerBackBtn.addEventListener("click", () => {
+    navigatePicker("..");
+  });
+
+  pickerCancelBtn.addEventListener("click", () => {
+    closePicker();
+  });
+
+  pickerSelectBtn.addEventListener("click", () => {
+    if (pickerActiveTarget) {
+      pickerActiveTarget.value = pickerCurrentPathVal;
+      if (pickerActiveTarget === imagesDirInput) {
+        checkLabelsVisibility();
+        suggestLabels(pickerCurrentPathVal);
+      }
+    }
+    closePicker();
+  });
+
   imagesDirInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       openProject();
     }
+  });
+
+  imagesDirInput.addEventListener("input", () => {
+    checkLabelsVisibility();
   });
 
   labelsDirInput.addEventListener("keydown", (event) => {
@@ -263,15 +307,120 @@ function openModal() {
   refreshRecents();
   loadModal.classList.remove("hidden");
   loadModal.setAttribute("aria-hidden", "false");
+  checkLabelsVisibility();
   imagesDirInput.focus();
+}
+
+function checkLabelsVisibility() {
+  if (imagesDirInput.value.trim() !== "") {
+    labelsSection.classList.remove("hidden");
+  } else {
+    labelsSection.classList.add("hidden");
+  }
 }
 
 function closeModal() {
   loadModal.classList.add("hidden");
   loadModal.setAttribute("aria-hidden", "true");
+  closePicker();
+}
+
+async function openPicker(target) {
+  pickerActiveTarget = target;
+  folderPicker.classList.remove("hidden");
+  let startPath = target.value.trim();
+  await navigatePicker(startPath);
+}
+
+function closePicker() {
+  folderPicker.classList.add("hidden");
+  pickerActiveTarget = null;
+}
+
+async function navigatePicker(targetPath) {
+  try {
+    let url = "/api/browse";
+    if (targetPath === "..") {
+      if (pickerCurrentPathVal) {
+        url += `?path=${encodeURIComponent(pickerCurrentPathVal)}&parent=true`;
+      }
+    } else if (targetPath) {
+      url += `?path=${encodeURIComponent(targetPath)}`;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (targetPath) {
+        await navigatePicker("");
+      }
+      return;
+    }
+    const data = await response.json();
+
+    if (targetPath === ".." && data.parent) {
+      const parentResponse = await fetch(`/api/browse?path=${encodeURIComponent(data.parent)}`);
+      if (parentResponse.ok) {
+        const parentData = await parentResponse.json();
+        updatePickerUI(parentData);
+        return;
+      }
+    }
+
+    updatePickerUI(data);
+  } catch (err) {
+    console.error("Browse error:", err);
+  }
+}
+
+async function suggestLabels(imagesDir) {
+  if (!imagesDir) return;
+  try {
+    const url = `/api/suggest_labels?imagesDir=${encodeURIComponent(imagesDir)}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.labelsDir) {
+        labelsDirInput.value = data.labelsDir;
+      }
+    }
+  } catch (e) {
+    console.error("Suggest labels error:", e);
+  }
+}
+
+function updatePickerUI(data) {
+  pickerCurrentPathVal = data.current;
+  pickerCurrentPath.textContent = data.current;
+  pickerList.innerHTML = "";
+
+  if (data.parent && data.parent !== data.current) {
+    // Parent option handled by Back button, but we could also add it to list
+  }
+
+  data.dirs.forEach((dir) => {
+    const item = document.createElement("div");
+    item.className = "picker-item";
+    item.textContent = dir;
+    item.addEventListener("click", () => {
+      // Join paths correctly (server side is safer but we can do simple join here)
+      const separator = pickerCurrentPathVal.includes("\\") ? "\\" : "/";
+      const nextPath = pickerCurrentPathVal.endsWith(separator)
+        ? pickerCurrentPathVal + dir
+        : pickerCurrentPathVal + separator + dir;
+      navigatePicker(nextPath);
+    });
+    pickerList.appendChild(item);
+  });
+
+  pickerBackBtn.disabled = !data.parent || data.parent === data.current;
+  pickerBackBtn.onclick = () => {
+    if (data.parent) navigatePicker(data.parent);
+  };
 }
 
 function refreshRecents() {
+
+
   updateDatalist(imagesDirList, getRecentList(storageKey.imagesRecent));
   updateDatalist(labelsDirList, getRecentList(storageKey.labelsRecent));
 }
