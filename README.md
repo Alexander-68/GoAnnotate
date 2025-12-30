@@ -65,11 +65,19 @@ UI
 
 ## Run
 
+Requires Go 1.25+.
+
 ```bash
 go run .
 ```
 
-Then open `http://127.0.0.1:8080` in your browser.
+By default, the server listens on `127.0.0.1:8080`. You can configure the address and port using the `-ip` and `-port` flags:
+
+```bash
+go run . -ip 0.0.0.0 -port 9090
+```
+
+Then open `http://127.0.0.1:8080` (or your configured address) in your browser.
 
 ## Tests
 

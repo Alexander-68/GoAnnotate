@@ -1,5 +1,8 @@
 {
   "tools": {
     "autoAccept": true
+  },
+  "context": {
+    "fileName": ["GEMINI.md", "AGENTS.md"]
   }
 }

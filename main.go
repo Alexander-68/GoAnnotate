@@ -1,9 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"embed"
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -11,7 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -35,11 +38,16 @@ type labelPayload struct {
 }
 
 func main() {
+	ip := flag.String("ip", "127.0.0.1", "IP address to listen on")
+	port := flag.Int("port", 8080, "Port to listen on")
+	flag.Parse()
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/list", handleList)
-	mux.HandleFunc("/api/image", handleImage)
-	mux.HandleFunc("/api/labels", handleLabels)
-	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/list", handleList)
+	mux.HandleFunc("GET /api/image", handleImage)
+	mux.HandleFunc("GET /api/labels", handleLabelsGet)
+	mux.HandleFunc("POST /api/labels", handleLabelsPost)
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -51,7 +59,7 @@ func main() {
 	fileServer := http.FileServer(http.FS(webFS))
 	mux.Handle("/", fileServer)
 
-	addr := "0.0.0.0:8080"
+	addr := fmt.Sprintf("%s:%d", *ip, *port)
 	log.Printf("GoAnnotate running at http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, logRequests(mux)))
 }
@@ -66,10 +74,6 @@ func logRequests(next http.Handler) http.Handler {
 }
 
 func handleList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	imagesDir := strings.TrimSpace(r.URL.Query().Get("imagesDir"))
 	labelsDir := strings.TrimSpace(r.URL.Query().Get("labelsDir"))
 	if imagesDir == "" {
@@ -119,8 +123,8 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		images = append(images, imageEntry{Name: name, LabelExists: labelExists})
 	}
 
-	sort.Slice(images, func(i, j int) bool {
-		return strings.ToLower(images[i].Name) < strings.ToLower(images[j].Name)
+	slices.SortFunc(images, func(a, b imageEntry) int {
+		return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 
 	log.Printf("Loaded dataset imagesDir=%q labelsDir=%q images=%d labeled=%d",
@@ -129,10 +133,6 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleImage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	imagesDir := strings.TrimSpace(r.URL.Query().Get("imagesDir"))
 	file := strings.TrimSpace(r.URL.Query().Get("file"))
 	if imagesDir == "" || file == "" {
@@ -154,75 +154,72 @@ func handleImage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fullPath)
 }
 
-func handleLabels(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		labelsDir := strings.TrimSpace(r.URL.Query().Get("labelsDir"))
-		file := strings.TrimSpace(r.URL.Query().Get("file"))
-		if labelsDir == "" || file == "" {
-			http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
-			return
-		}
-		if !strings.HasSuffix(strings.ToLower(file), ".txt") {
-			http.Error(w, "labels must be .txt", http.StatusBadRequest)
-			return
-		}
-		fullPath, err := safeJoin(labelsDir, file)
-		if err != nil {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
-		}
-		data, err := os.ReadFile(fullPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			http.Error(w, "unable to read labels", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write(data)
-	case http.MethodPost:
-		body := http.MaxBytesReader(w, r.Body, 8<<20)
-		defer body.Close()
-		payloadBytes, err := io.ReadAll(body)
-		if err != nil {
-			http.Error(w, "invalid body", http.StatusBadRequest)
-			return
-		}
-		var payload labelPayload
-		if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		payload.LabelsDir = strings.TrimSpace(payload.LabelsDir)
-		payload.File = strings.TrimSpace(payload.File)
-		if payload.LabelsDir == "" || payload.File == "" {
-			http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
-			return
-		}
-		if !strings.HasSuffix(strings.ToLower(payload.File), ".txt") {
-			http.Error(w, "labels must be .txt", http.StatusBadRequest)
-			return
-		}
-		fullPath, err := safeJoin(payload.LabelsDir, payload.File)
-		if err != nil {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
-		}
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-			http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
-			return
-		}
-		if err := os.WriteFile(fullPath, []byte(payload.Content), 0o644); err != nil {
-			http.Error(w, "unable to save labels", http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func handleLabelsGet(w http.ResponseWriter, r *http.Request) {
+	labelsDir := strings.TrimSpace(r.URL.Query().Get("labelsDir"))
+	file := strings.TrimSpace(r.URL.Query().Get("file"))
+	if labelsDir == "" || file == "" {
+		http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
+		return
 	}
+	if !strings.HasSuffix(strings.ToLower(file), ".txt") {
+		http.Error(w, "labels must be .txt", http.StatusBadRequest)
+		return
+	}
+	fullPath, err := safeJoin(labelsDir, file)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Error(w, "unable to read labels", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write(data)
+}
+
+func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, 8<<20)
+	defer body.Close()
+	payloadBytes, err := io.ReadAll(body)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	var payload labelPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	payload.LabelsDir = strings.TrimSpace(payload.LabelsDir)
+	payload.File = strings.TrimSpace(payload.File)
+	if payload.LabelsDir == "" || payload.File == "" {
+		http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
+		return
+	}
+	if !strings.HasSuffix(strings.ToLower(payload.File), ".txt") {
+		http.Error(w, "labels must be .txt", http.StatusBadRequest)
+		return
+	}
+	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(fullPath, []byte(payload.Content), 0o644); err != nil {
+		http.Error(w, "unable to save labels", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {
