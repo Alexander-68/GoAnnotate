@@ -276,10 +276,23 @@ body::before {
 }
 
 .picker-list {
-  max-height: 200px;
+  height: 250px;
   overflow-y: auto;
   display: grid;
   gap: 4px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.picker-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .picker-item {
@@ -292,6 +305,18 @@ body::before {
 
 .picker-item:hover {
   background: rgba(29, 111, 163, 0.1);
+}
+
+.picker-item.selected {
+  background: rgba(228, 87, 46, 0.2);
+  border: 1px solid rgba(228, 87, 46, 0.4);
+}
+
+.picker-meta {
+  float: right;
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .picker-actions {

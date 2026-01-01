@@ -13,6 +13,7 @@ const folderPicker = document.getElementById("folderPicker");
 const pickerList = document.getElementById("pickerList");
 const pickerCurrentPath = document.getElementById("pickerCurrentPath");
 const pickerBackBtn = document.getElementById("pickerBackBtn");
+const pickerTitle = document.getElementById("pickerTitle");
 const pickerCancelBtn = document.getElementById("pickerCancelBtn");
 const pickerSelectBtn = document.getElementById("pickerSelectBtn");
 const osdEl = document.getElementById("osd");
@@ -20,6 +21,7 @@ const labelsSection = document.getElementById("labelsSection");
 
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
+let pickerSelectedPath = "";
 
 const MAX_RECENTS = 10;
 const MAX_UNDO = 50;
@@ -233,11 +235,11 @@ function init() {
   });
 
   browseImagesBtn.addEventListener("click", () => {
-    openPicker(imagesDirInput);
+    openPicker(imagesDirInput, "Select Images Directory");
   });
 
   browseLabelsBtn.addEventListener("click", () => {
-    openPicker(labelsDirInput);
+    openPicker(labelsDirInput, "Select Labels Directory");
   });
 
   pickerBackBtn.addEventListener("click", () => {
@@ -250,10 +252,11 @@ function init() {
 
   pickerSelectBtn.addEventListener("click", () => {
     if (pickerActiveTarget) {
-      pickerActiveTarget.value = pickerCurrentPathVal;
+      const val = pickerSelectedPath || pickerCurrentPathVal;
+      pickerActiveTarget.value = val;
       if (pickerActiveTarget === imagesDirInput) {
         checkLabelsVisibility();
-        suggestLabels(pickerCurrentPathVal);
+        suggestLabels(val);
       }
     }
     closePicker();
@@ -325,10 +328,14 @@ function closeModal() {
   closePicker();
 }
 
-async function openPicker(target) {
+async function openPicker(target, title) {
   pickerActiveTarget = target;
+  if (pickerTitle) {
+    pickerTitle.textContent = title || "Select Directory";
+  }
   folderPicker.classList.remove("hidden");
   let startPath = target.value.trim();
+  pickerSelectedPath = startPath;
   await navigatePicker(startPath);
 }
 
@@ -393,22 +400,60 @@ function updatePickerUI(data) {
   pickerCurrentPath.textContent = data.current;
   pickerList.innerHTML = "";
 
-  if (data.parent && data.parent !== data.current) {
-    // Parent option handled by Back button, but we could also add it to list
+  // Reset selection to current folder if we navigated away from explicit selection,
+  // unless the explicit selection is the folder we are currently in.
+  if (pickerSelectedPath && pickerSelectedPath !== data.current) {
+     // Check if pickerSelectedPath is a direct child of data.current?
+     // Actually, simpler logic: assume if we navigated, we reset specific file selection.
+     // But if we just refreshed current view...
+     // Let's just default to current path if the previous selection is not visible here.
+     // Actually, let's keep it simple: If we are here, default selection is the current folder
+     // unless the user clicks a child.
+     pickerSelectedPath = data.current;
   }
+
+  const updateSelectBtnText = () => {
+    const isRoot = pickerSelectedPath === data.current;
+    pickerSelectBtn.textContent = isRoot ? "Select Current" : "Select Selected";
+  };
+  updateSelectBtnText();
 
   data.dirs.forEach((dir) => {
     const item = document.createElement("div");
     item.className = "picker-item";
-    item.textContent = dir;
+    
+    // Build meta info
+    const meta = document.createElement("span");
+    meta.className = "picker-meta";
+    const parts = [];
+    if (dir.images > 0) parts.push(`${dir.images} img`);
+    if (dir.labels > 0) parts.push(`${dir.labels} lbl`);
+    if (parts.length > 0) {
+      meta.textContent = parts.join(", ");
+    }
+    
+    // Construct path for this item
+    const separator = pickerCurrentPathVal.includes("\\") ? "\\" : "/";
+    const fullPath = pickerCurrentPathVal.endsWith(separator)
+      ? pickerCurrentPathVal + dir.name
+      : pickerCurrentPathVal + separator + dir.name;
+
+    item.textContent = dir.name;
+    item.appendChild(meta);
+
     item.addEventListener("click", () => {
-      // Join paths correctly (server side is safer but we can do simple join here)
-      const separator = pickerCurrentPathVal.includes("\\") ? "\\" : "/";
-      const nextPath = pickerCurrentPathVal.endsWith(separator)
-        ? pickerCurrentPathVal + dir
-        : pickerCurrentPathVal + separator + dir;
-      navigatePicker(nextPath);
+      if (dir.hasSubdirs) {
+        navigatePicker(fullPath);
+      } else {
+        // Select this folder without entering
+        pickerSelectedPath = fullPath;
+        // Update UI highlights
+        Array.from(pickerList.children).forEach(c => c.classList.remove("selected"));
+        item.classList.add("selected");
+        updateSelectBtnText();
+      }
     });
+    
     pickerList.appendChild(item);
   });
 

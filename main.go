@@ -28,9 +28,16 @@ type listResponse struct {
 }
 
 type browseResponse struct {
-	Current string   `json:"current"`
-	Parent  string   `json:"parent"`
-	Dirs    []string `json:"dirs"`
+	Current string     `json:"current"`
+	Parent  string     `json:"parent"`
+	Dirs    []dirEntry `json:"dirs"`
+}
+
+type dirEntry struct {
+	Name       string `json:"name"`
+	HasSubdirs bool   `json:"hasSubdirs"`
+	Images     int    `json:"images"`
+	Labels     int    `json:"labels"`
 }
 
 type imageEntry struct {
@@ -188,21 +195,49 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dirs []string
+	var dirs []dirEntry
 	for _, entry := range entries {
 		if entry.IsDir() || (entry.Type()&os.ModeSymlink != 0) {
-			if entry.Type()&os.ModeSymlink != 0 {
-				fi, err := os.Stat(filepath.Join(absPath, entry.Name()))
+			isDir := entry.IsDir()
+			fullSubPath := filepath.Join(absPath, entry.Name())
+			if !isDir {
+				// verify symlink
+				fi, err := os.Stat(fullSubPath)
 				if err != nil || !fi.IsDir() {
 					continue
 				}
 			}
-			dirs = append(dirs, entry.Name())
+
+			// Analyze content of the subdirectory
+			hasSubdirs := false
+			imgCount := 0
+			lblCount := 0
+
+			subEntries, _ := os.ReadDir(fullSubPath)
+			for _, sub := range subEntries {
+				if sub.IsDir() {
+					hasSubdirs = true
+				} else {
+					sl := strings.ToLower(sub.Name())
+					if isImageExt(filepath.Ext(sl)) {
+						imgCount++
+					} else if strings.HasSuffix(sl, ".txt") {
+						lblCount++
+					}
+				}
+			}
+
+			dirs = append(dirs, dirEntry{
+				Name:       entry.Name(),
+				HasSubdirs: hasSubdirs,
+				Images:     imgCount,
+				Labels:     lblCount,
+			})
 		}
 	}
 
-	slices.SortFunc(dirs, func(a, b string) int {
-		return cmp.Compare(strings.ToLower(a), strings.ToLower(b))
+	slices.SortFunc(dirs, func(a, b dirEntry) int {
+		return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 
 	parent := filepath.Dir(absPath)
