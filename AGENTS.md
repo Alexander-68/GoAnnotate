@@ -3,6 +3,7 @@ This app code uses Go version 1.25 or newer. Use only new Go features, do not ca
 
 Maintain README.md file updated with description, functions, interactions (keyboard, mouse), parameters description.
 
+Do not start the application by yourself.
 
 
 

@@ -737,20 +737,39 @@ async function loadImage(index, options = {}) {
     }
     state.annotations = parseLabels(labelText);
     state.baseAnnotations = cloneAnnotations(state.annotations);
-    if (preserveView && viewState
-      && Number.isFinite(viewState.scale)
-      && Number.isFinite(viewState.offsetX)
-      && Number.isFinite(viewState.offsetY)) {
-      state.view.scale = viewState.scale;
-      state.view.offsetX = viewState.offsetX;
-      state.view.offsetY = viewState.offsetY;
+    if (preserveView && viewState) {
+      if (Number.isFinite(viewState.relX)
+        && Number.isFinite(viewState.relY)
+        && Number.isFinite(viewState.scale)
+        && state.imageWidth > 0) {
+        state.view.scale = viewState.scale;
+        const newCx = viewState.relX * state.imageWidth;
+        const newCy = viewState.relY * state.imageHeight;
+        state.view.offsetX = (state.canvasSize.width / 2) - newCx * state.view.scale;
+        state.view.offsetY = (state.canvasSize.height / 2) - newCy * state.view.scale;
+      } else if (Number.isFinite(viewState.scale)
+        && Number.isFinite(viewState.offsetX)
+        && Number.isFinite(viewState.offsetY)) {
+        state.view.scale = viewState.scale;
+        state.view.offsetX = viewState.offsetX;
+        state.view.offsetY = viewState.offsetY;
+      } else {
+        fitImage();
+      }
     } else {
       fitImage();
     }
     if (preserveMagnifier && magnifierState) {
       state.magnifier.active = magnifierState.active;
-      state.magnifier.x = magnifierState.x;
-      state.magnifier.y = magnifierState.y;
+      if (Number.isFinite(magnifierState.relX)
+        && Number.isFinite(magnifierState.relY)
+        && state.imageWidth > 0) {
+        state.magnifier.x = magnifierState.relX * state.imageWidth;
+        state.magnifier.y = magnifierState.relY * state.imageHeight;
+      } else {
+        state.magnifier.x = magnifierState.x;
+        state.magnifier.y = magnifierState.y;
+      }
       state.magnifier.scale = magnifierState.scale;
       state.magnifier.screenX = magnifierState.screenX;
       state.magnifier.screenY = magnifierState.screenY;
@@ -2280,13 +2299,27 @@ async function changeImage(nextIndex) {
       return;
     }
   }
+
+  const oldW = state.imageWidth || 1;
+  const oldH = state.imageHeight || 1;
+  const cvsW = state.canvasSize.width;
+  const cvsH = state.canvasSize.height;
+
+  // View Center in World
+  const viewCx = (cvsW / 2 - state.view.offsetX) / state.view.scale;
+  const viewCy = (cvsH / 2 - state.view.offsetY) / state.view.scale;
+
   const viewState = {
+    relX: viewCx / oldW,
+    relY: viewCy / oldH,
     scale: state.view.scale,
     offsetX: state.view.offsetX,
     offsetY: state.view.offsetY
   };
   const magnifierState = {
     active: state.magnifier.active,
+    relX: state.magnifier.x / oldW,
+    relY: state.magnifier.y / oldH,
     x: state.magnifier.x,
     y: state.magnifier.y,
     scale: state.magnifier.scale,
