@@ -84,6 +84,13 @@ body::before {
   box-shadow: 0 10px 24px rgba(228, 87, 46, 0.25);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn.ghost {
   background: transparent;
   color: var(--ink);
@@ -147,6 +154,24 @@ body::before {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(6px);
   width: 100%;
+}
+
+.image-nav {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.image-nav .nav-btn {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(6px);
 }
 
 .modal {
@@ -365,6 +390,10 @@ body::before {
   .keys-grid {
     grid-template-columns: 1fr;
   }
+  .image-nav {
+    left: 10px;
+    right: 10px;
+  }
 }
 
 .field-header {
@@ -398,6 +427,9 @@ body::before {
 
 .magnifier {
   position: absolute;
+  --handle-size: 63px;
+  --handle-offset: calc(var(--handle-size) / -2);
+  --handle-radius: 18px;
   width: 360px;
   height: 360px;
   border: 3px solid var(--accent);
@@ -424,9 +456,9 @@ body::before {
 
 .magnifier-handle {
   position: absolute;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: var(--handle-size);
+  height: var(--handle-size);
+  border-radius: var(--handle-radius);
   border: 1px solid rgba(29, 28, 26, 0.35);
   background: rgba(255, 255, 255, 0.92);
   color: var(--ink);
@@ -446,22 +478,22 @@ body::before {
 }
 
 .magnifier-handle-move {
-  top: -21px;
-  left: -21px;
+  top: var(--handle-offset);
+  left: var(--handle-offset);
   cursor: move;
 }
 
 .magnifier-handle-minimize {
-  top: -21px;
-  right: -21px;
+  top: var(--handle-offset);
+  right: var(--handle-offset);
   background: rgba(29, 111, 163, 0.9);
   color: #fff;
   border-color: rgba(29, 28, 26, 0.2);
 }
 
 .magnifier-handle-resize {
-  right: -21px;
-  bottom: -21px;
+  right: var(--handle-offset);
+  bottom: var(--handle-offset);
   cursor: nwse-resize;
 }
 

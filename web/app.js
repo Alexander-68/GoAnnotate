@@ -9,6 +9,8 @@ const openHelpBtn = document.getElementById("openHelpBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
+const prevImageBtn = document.getElementById("prevImageBtn");
+const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
 const browseLabelsBtn = document.getElementById("browseLabelsBtn");
 const folderPicker = document.getElementById("folderPicker");
@@ -335,6 +337,18 @@ function init() {
     }
   });
 
+  if (prevImageBtn) {
+    prevImageBtn.addEventListener("click", () => {
+      changeImage(state.index - 1);
+    });
+  }
+
+  if (nextImageBtn) {
+    nextImageBtn.addEventListener("click", () => {
+      changeImage(state.index + 1);
+    });
+  }
+
   // Main Canvas Events
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
@@ -402,6 +416,7 @@ function init() {
 
   resizeCanvas();
   openModal();
+  updateImageNav();
   updateMagnifierMinimizeButton();
   requestAnimationFrame(render);
 }
@@ -668,6 +683,7 @@ async function openProject() {
       state.undoStack = [];
       state.dirty = false;
       state.modifiedSinceLoad = false;
+      updateImageNav();
       return;
     }
     state.index = 0;
@@ -752,6 +768,8 @@ async function loadImage(index, options = {}) {
     setStatus(`${entry.name} (${state.index + 1}/${state.images.length})`);
   } catch (error) {
     setStatus(`Error: ${error.message}`);
+  } finally {
+    updateImageNav();
   }
 }
 
@@ -1059,6 +1077,16 @@ function updateOsd() {
     osdEl.textContent = text;
     state.osdCache = text;
   }
+}
+
+function updateImageNav() {
+  if (!prevImageBtn || !nextImageBtn) {
+    return;
+  }
+  const total = state.images.length;
+  const hasImages = total > 0;
+  prevImageBtn.disabled = !hasImages || state.index <= 0;
+  nextImageBtn.disabled = !hasImages || state.index >= total - 1;
 }
 
 function buildObjectLines() {
