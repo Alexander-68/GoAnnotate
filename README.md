@@ -35,16 +35,16 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 ## Interactions
 
 Keyboard
-- `A` / `D`: Previous / next image (saves current labels before switching).     
+- `A` / `D` or `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).     
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
 - `B`: Cycle annotation color schemes.
-- `C` / `Z`: Select next / previous object.
-- `X`: Unselect object (show all).
-- `Delete`: Remove the selected keypoint, or remove the selected object.
-- `+` / `-`: Change the selected keypoint name (available names only), or change the selected object class ID when no keypoint is selected.
+- `Z` / `C` or `Up` / `Down Arrow`: Select previous / next object (if no keypoint selected) or previous / next keypoint (if keypoint selected).
+- `X`: Unselect keypoint (if selected) or unselect object (show all).
+- `Delete` / `F`: Remove the selected keypoint, or remove the selected object.
+- `+` / `E` / `-` / `Q`: Increment/decrement the selected keypoint name (available IDs only), or increment/decrement the selected object class ID when no keypoint is selected.
 
 Mouse
 - Left click: Select keypoint (opens magnifier) or bounding box (selection only).
@@ -52,7 +52,7 @@ Mouse
 - Left drag on empty space or bbox: Pan the view (shows magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
-- `Ctrl` + left click: Add a new keypoint to the selected object (auto-selects an unused name).
+- `Ctrl` + left click: Add a new keypoint to the selected object. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.

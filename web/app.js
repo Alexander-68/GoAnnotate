@@ -176,6 +176,7 @@ const state = {
     corner: null
   },
   lastClassId: 0,
+  lastSelectedKeypointIndex: -1,
   colorSchemeIndex: 0,
   lastMouse: {
     screenX: null,
@@ -996,13 +997,8 @@ function drawKeypoints(ctx, scale, annotation, isActive) {
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
     const visColor = scheme.visColors[kp.v] || scheme.visColors[2];
     ctx.strokeStyle = visColor;
-    ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5, scale);
+    ctx.lineWidth = toWorldSize(isSelected ? 4 : 1.5, scale);
     ctx.stroke();
-    if (isSelected) {
-      ctx.strokeStyle = "#1d1c1a";
-      ctx.lineWidth = toWorldSize(2.5, scale);
-      ctx.stroke();
-    }
   }
 }
 
@@ -1906,12 +1902,12 @@ function onKeyDown(event) {
     event.preventDefault();
   }
 
-  if (event.code === "KeyA") {
+  if (event.code === "KeyA" || event.code === "ArrowLeft") {
     event.preventDefault();
     changeImage(state.index - 1);
   }
 
-  if (event.code === "KeyD") {
+  if (event.code === "KeyD" || event.code === "ArrowRight") {
     event.preventDefault();
     changeImage(state.index + 1);
   }
@@ -1945,31 +1941,35 @@ function onKeyDown(event) {
     cycleColorScheme();
   }
 
-  if (event.code === "KeyC") {
+  if (event.code === "KeyC" || event.code === "ArrowDown") {
     event.preventDefault();
-    selectNextObject();
+    selectNext();
   }
 
-  if (event.code === "KeyZ") {
+  if (event.code === "KeyZ" || event.code === "ArrowUp") {
     event.preventDefault();
-    selectPrevObject();
+    selectPrev();
   }
 
   if (event.code === "KeyX") {
     event.preventDefault();
-    clearSelection();
+    if (state.selection.keypointIndex >= 0) {
+      setSelection(state.selection.objectIndex, -1, null);
+    } else {
+      clearSelection();
+    }
   }
 
-  if (event.code === "Delete") {
+  if (event.code === "Delete" || event.code === "KeyF") {
     deleteSelection();
   }
 
-  if (isPlusKey(event)) {
+  if (isPlusKey(event) || event.code === "KeyE") {
     event.preventDefault();
     handlePlusMinus(1);
   }
 
-  if (isMinusKey(event)) {
+  if (isMinusKey(event) || event.code === "KeyQ") {
     event.preventDefault();
     handlePlusMinus(-1);
   }
@@ -2039,6 +2039,7 @@ function changeSelectedKeypointName(delta) {
   annotation.keypoints[currentIndex] = { x: 0, y: 0, v: 0 };
   annotation.hasPose = true;
   state.selection.keypointIndex = nextIndex;
+  state.lastSelectedKeypointIndex = nextIndex;
   showKeypointHover(state.selection.objectIndex, nextIndex);
   markDirty();
 }
@@ -2057,6 +2058,16 @@ function ensureKeypoints(annotation) {
 
 function findFirstAvailableKeypointIndex(annotation) {
   ensureKeypoints(annotation);
+  
+  if (state.lastSelectedKeypointIndex >= 0) {
+    for (let i = state.lastSelectedKeypointIndex + 1; i < KPT_COUNT; i++) {
+      const kp = annotation.keypoints[i];
+      if (kp && kp.v === 0) {
+        return i;
+      }
+    }
+  }
+
   for (let i = 0; i < KPT_COUNT; i += 1) {
     const kp = annotation.keypoints[i];
     if (kp && kp.v === 0) {
@@ -2503,8 +2514,14 @@ function getVisibleIndices() {
 }
 
 function setSelection(objectIndex, keypointIndex, corner) {
+  if (state.selection.objectIndex !== objectIndex) {
+    state.lastSelectedKeypointIndex = -1;
+  }
   state.selection.objectIndex = objectIndex;
   state.selection.keypointIndex = keypointIndex;
+  if (keypointIndex >= 0) {
+    state.lastSelectedKeypointIndex = keypointIndex;
+  }
   state.selection.corner = corner;
   if (objectIndex >= 0) {
     const annotation = state.annotations[objectIndex];
@@ -2539,6 +2556,48 @@ function selectPrevObject() {
     ? total - 1
     : (state.selection.objectIndex - 1 + total) % total;
   setSelection(prev, -1, null);
+}
+
+function selectNext() {
+  const objIdx = state.selection.objectIndex;
+  const kpIdx = state.selection.keypointIndex;
+
+  if (objIdx >= 0 && kpIdx >= 0) {
+    const ann = state.annotations[objIdx];
+    const nextKp = findNextVisibleKeypoint(ann, kpIdx, 1);
+    if (nextKp !== -1) {
+      setSelection(objIdx, nextKp, null);
+      return;
+    }
+  }
+  selectNextObject();
+}
+
+function selectPrev() {
+  const objIdx = state.selection.objectIndex;
+  const kpIdx = state.selection.keypointIndex;
+
+  if (objIdx >= 0 && kpIdx >= 0) {
+    const ann = state.annotations[objIdx];
+    const prevKp = findNextVisibleKeypoint(ann, kpIdx, -1);
+    if (prevKp !== -1) {
+      setSelection(objIdx, prevKp, null);
+      return;
+    }
+  }
+  selectPrevObject();
+}
+
+function findNextVisibleKeypoint(ann, currentIndex, step) {
+  if (!ann || !ann.keypoints) return -1;
+  const count = ann.keypoints.length;
+  for (let i = 1; i <= count; i++) {
+    const idx = (currentIndex + step * i + count) % count;
+    if (ann.keypoints[idx] && ann.keypoints[idx].v > 0) {
+      return idx;
+    }
+  }
+  return -1;
 }
 
 function updateHover(worldX, worldY, scale) {
