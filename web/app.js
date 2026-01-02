@@ -23,6 +23,10 @@ const labelsSection = document.getElementById("labelsSection");
 const magnifier = document.getElementById("magnifier");
 const magnifierCanvas = document.getElementById("magnifierCanvas");
 const magCtx = magnifierCanvas ? magnifierCanvas.getContext("2d") : null;
+const magnifierMoveHandle = document.getElementById("magnifierMove");
+const magnifierResizeHandle = document.getElementById("magnifierResize");
+const magnifierMinimizeBtn = document.getElementById("magnifierMinimize");
+const workspace = document.querySelector(".workspace");
 
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
@@ -145,6 +149,13 @@ const PAN_DRAG_THRESHOLD = 3;
 const TOUCH_SWIPE_THRESHOLD = 80;
 const TOUCH_SWIPE_MAX_TIME = 350;
 const TOUCH_SWIPE_AXIS_RATIO = 1.3;
+const DOUBLE_TAP_MAX_DELAY = 280;
+const DOUBLE_TAP_MAX_DISTANCE = 30;
+const MAGNIFIER_DEFAULT_WIDTH = 360;
+const MAGNIFIER_DEFAULT_HEIGHT = 360;
+const MAGNIFIER_MIN_WIDTH = 160;
+const MAGNIFIER_MIN_HEIGHT = 160;
+const MAGNIFIER_MINIMIZED_SIZE = 44;
 
 const state = {
   imagesDir: "",
@@ -209,15 +220,37 @@ const state = {
     startOffsetY: 0,
     startScale: 1,
     startDist: 0,
-    swipeEligible: false
+    swipeEligible: false,
+    pinchIsMagnifier: false,
+    lastTapTime: 0,
+    lastTapX: 0,
+    lastTapY: 0
   },
   magnifier: {
     active: false,
     x: 0, // world x center
     y: 0, // world y center
     scale: 5,
-    screenX: 0,
-    screenY: 0
+    screenX: null,
+    screenY: null,
+    width: MAGNIFIER_DEFAULT_WIDTH,
+    height: MAGNIFIER_DEFAULT_HEIGHT,
+    minimized: false,
+    restoreWidth: MAGNIFIER_DEFAULT_WIDTH,
+    restoreHeight: MAGNIFIER_DEFAULT_HEIGHT,
+    restoreX: null,
+    restoreY: null,
+    drag: {
+      mode: null,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      startLeft: 0,
+      startTop: 0,
+      startWidth: MAGNIFIER_DEFAULT_WIDTH,
+      startHeight: MAGNIFIER_DEFAULT_HEIGHT,
+      target: null
+    }
   },
   spaceDown: false,
   dirty: false,
@@ -306,6 +339,7 @@ function init() {
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseleave", () => clearHover());
+  canvas.addEventListener("dblclick", onDoubleClick);
   window.addEventListener("mouseup", onMouseUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -326,6 +360,30 @@ function init() {
     magnifierCanvas.addEventListener("touchend", onTouchEnd, { passive: false });
   }
 
+  if (magnifierMoveHandle) {
+    magnifierMoveHandle.addEventListener("pointerdown", (event) => beginMagnifierDrag(event, "move"));
+  }
+  if (magnifierResizeHandle) {
+    magnifierResizeHandle.addEventListener("pointerdown", (event) => beginMagnifierDrag(event, "resize"));
+  }
+  if (magnifierMinimizeBtn) {
+    magnifierMinimizeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setMagnifierMinimized(!state.magnifier.minimized);
+    });
+  }
+  if (magnifier) {
+    magnifier.addEventListener("click", (event) => {
+      if (!state.magnifier.minimized) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setMagnifierMinimized(false);
+    });
+  }
+
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.close) {
@@ -335,12 +393,16 @@ function init() {
 
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("pointermove", onMagnifierDragMove);
+  window.addEventListener("pointerup", endMagnifierDrag);
+  window.addEventListener("pointercancel", endMagnifierDrag);
   window.addEventListener("resize", () => {
     resizeCanvas();
   });
 
   resizeCanvas();
   openModal();
+  updateMagnifierMinimizeButton();
   requestAnimationFrame(render);
 }
 
@@ -615,10 +677,14 @@ async function openProject() {
   }
 }
 
-async function loadImage(index) {
+async function loadImage(index, options = {}) {
   if (index < 0 || index >= state.images.length) {
     return;
   }
+  const preserveView = options && options.preserveView;
+  const preserveMagnifier = options && options.preserveMagnifier;
+  const viewState = options && options.viewState;
+  const magnifierState = options && options.magnifierState;
   const entry = state.images[index];
   state.index = index;
   state.imageName = entry.name;
@@ -655,7 +721,34 @@ async function loadImage(index) {
     }
     state.annotations = parseLabels(labelText);
     state.baseAnnotations = cloneAnnotations(state.annotations);
-    fitImage();
+    if (preserveView && viewState
+      && Number.isFinite(viewState.scale)
+      && Number.isFinite(viewState.offsetX)
+      && Number.isFinite(viewState.offsetY)) {
+      state.view.scale = viewState.scale;
+      state.view.offsetX = viewState.offsetX;
+      state.view.offsetY = viewState.offsetY;
+    } else {
+      fitImage();
+    }
+    if (preserveMagnifier && magnifierState) {
+      state.magnifier.active = magnifierState.active;
+      state.magnifier.x = magnifierState.x;
+      state.magnifier.y = magnifierState.y;
+      state.magnifier.scale = magnifierState.scale;
+      state.magnifier.screenX = magnifierState.screenX;
+      state.magnifier.screenY = magnifierState.screenY;
+      state.magnifier.width = magnifierState.width;
+      state.magnifier.height = magnifierState.height;
+      state.magnifier.minimized = magnifierState.minimized;
+      state.magnifier.restoreWidth = magnifierState.restoreWidth;
+      state.magnifier.restoreHeight = magnifierState.restoreHeight;
+      state.magnifier.restoreX = magnifierState.restoreX;
+      state.magnifier.restoreY = magnifierState.restoreY;
+      state.magnifier.drag.mode = null;
+      state.magnifier.drag.pointerId = null;
+      updateMagnifierMinimizeButton();
+    }
     setStatus(`${entry.name} (${state.index + 1}/${state.images.length})`);
   } catch (error) {
     setStatus(`Error: ${error.message}`);
@@ -1058,6 +1151,17 @@ function worldToScreen(worldX, worldY) {
   };
 }
 
+function isWithinImage(worldX, worldY) {
+  if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
+    return false;
+  }
+  if (state.imageWidth <= 0 || state.imageHeight <= 0) {
+    return false;
+  }
+  return worldX >= 0 && worldX <= state.imageWidth
+    && worldY >= 0 && worldY <= state.imageHeight;
+}
+
 function onMouseDown(event) {
   if (!state.imageBitmap) {
     return;
@@ -1068,14 +1172,8 @@ function onMouseDown(event) {
   state.lastMouse.screenX = pos.screenX;
   state.lastMouse.screenY = pos.screenY;
 
-  // On left click, activate magnifier and set its center
-  if (event.button === 0) {
-    state.magnifier.active = true;
-    // If clicking on main canvas, update magnifier to look at this spot
-    if (!isMagnifier) {
-      state.magnifier.x = worldX;
-      state.magnifier.y = worldY;
-    }
+  if (!isMagnifier && !isWithinImage(worldX, worldY)) {
+    return;
   }
 
   state.dragging.snapshotTaken = false;
@@ -1122,6 +1220,14 @@ function onMouseDown(event) {
       state.dragging.snapshotTaken = true;
       state.dragging.startX = event.clientX;
       state.dragging.startY = event.clientY;
+      state.magnifier.active = true;
+      if (state.magnifier.minimized) {
+        setMagnifierMinimized(false);
+      }
+      if (!isMagnifier) {
+        state.magnifier.x = worldX;
+        state.magnifier.y = worldY;
+      }
     }
     return;
   }
@@ -1134,6 +1240,14 @@ function onMouseDown(event) {
     state.dragging.startWorldY = worldY;
     state.dragging.startX = event.clientX;
     state.dragging.startY = event.clientY;
+    state.magnifier.active = true;
+    if (state.magnifier.minimized) {
+      setMagnifierMinimized(false);
+    }
+    if (!isMagnifier) {
+      state.magnifier.x = worldX;
+      state.magnifier.y = worldY;
+    }
     return;
   }
 
@@ -1281,6 +1395,25 @@ function onMouseMove(event) {
   }
 }
 
+function onDoubleClick(event) {
+  if (!state.imageBitmap) {
+    return;
+  }
+  if (event.target === magnifierCanvas) {
+    return;
+  }
+  const pos = getPointerState(event, false);
+  if (!isWithinImage(pos.worldX, pos.worldY)) {
+    return;
+  }
+  state.magnifier.active = true;
+  if (state.magnifier.minimized) {
+    setMagnifierMinimized(false);
+  }
+  state.magnifier.x = pos.worldX;
+  state.magnifier.y = pos.worldY;
+}
+
 function onMouseUp(event) {
   // state.magnifierActive = false; // REMOVED: Magnifier stays open
   
@@ -1317,6 +1450,10 @@ function onWheel(event) {
   
   const pos = getPointerState(event);
   const { isMagnifier, worldX, worldY } = pos;
+
+  if (!isWithinImage(worldX, worldY)) {
+    return;
+  }
   
   if (isMagnifier) {
       const rect = magnifierCanvas.getBoundingClientRect();
@@ -1360,10 +1497,44 @@ function onTouchStart(event) {
   
   if (touches.length === 1) {
     const touch = touches[0];
-    state.magnifier.active = true;
-    if (!touch.isMagnifier) {
+    const now = Date.now();
+    const isMain = !touch.isMagnifier;
+    if (isMain && !isWithinImage(touch.worldX, touch.worldY)) {
+      state.touch.lastTapTime = 0;
+      state.touch.pinchIsMagnifier = false;
+      state.dragging.mode = null;
+      state.dragging.pendingSelection = null;
+      state.dragging.snapshotTaken = false;
+      state.touch.mode = "swipeOnly";
+      state.touch.swipeEligible = true;
+      state.touch.startX = touch.x;
+      state.touch.startY = touch.y;
+      state.touch.lastX = touch.x;
+      state.touch.lastY = touch.y;
+      state.touch.startTime = now;
+      return;
+    }
+    if (isMain) {
+      const dt = now - state.touch.lastTapTime;
+      const dx = touch.x - state.touch.lastTapX;
+      const dy = touch.y - state.touch.lastTapY;
+      if (dt > 0 && dt < DOUBLE_TAP_MAX_DELAY && Math.hypot(dx, dy) < DOUBLE_TAP_MAX_DISTANCE) {
+        state.touch.lastTapTime = 0;
+        state.touch.pinchIsMagnifier = false;
+        state.touch.mode = null;
+        state.dragging.mode = null;
+        state.touch.swipeEligible = false;
+        state.magnifier.active = true;
+        if (state.magnifier.minimized) {
+          setMagnifierMinimized(false);
+        }
         state.magnifier.x = touch.worldX;
         state.magnifier.y = touch.worldY;
+        return;
+      }
+      state.touch.lastTapTime = now;
+      state.touch.lastTapX = touch.x;
+      state.touch.lastTapY = touch.y;
     }
     
     clearHover();
@@ -1383,6 +1554,14 @@ function onTouchStart(event) {
       state.dragging.startWorldY = touch.worldY;
       state.touch.mode = "keypoint";
       state.touch.swipeEligible = false;
+      state.magnifier.active = true;
+      if (state.magnifier.minimized) {
+        setMagnifierMinimized(false);
+      }
+      if (!touch.isMagnifier) {
+        state.magnifier.x = touch.worldX;
+        state.magnifier.y = touch.worldY;
+      }
       return;
     }
 
@@ -1424,14 +1603,15 @@ function onTouchStart(event) {
     return;
   }
   if (touches.length === 2) {
-    state.magnifier.active = false;
     const dist = touchDistance(touches[0], touches[1]);
+    const isMagnifier = touches[0].isMagnifier;
     state.dragging.mode = null;
     state.touch.mode = "pinch";
     state.touch.startDist = dist;
-    state.touch.startScale = state.view.scale;
+    state.touch.startScale = isMagnifier ? state.magnifier.scale : state.view.scale;
     state.touch.startTime = Date.now();
     state.touch.swipeEligible = false;
+    state.touch.pinchIsMagnifier = isMagnifier;
   }
 }
 
@@ -1448,6 +1628,10 @@ function onTouchMove(event) {
     state.touch.lastY = touch.y;
     state.lastMouse.screenX = touch.x;
     state.lastMouse.screenY = touch.y;
+
+    if (state.touch.mode === "swipeOnly") {
+      return;
+    }
 
     if (state.touch.mode === "pendingPan") {
       const dx = touch.x - state.dragging.startX;
@@ -1539,11 +1723,34 @@ function onTouchMove(event) {
     }
     state.touch.mode = "pinch";
     state.touch.swipeEligible = false;
-    const worldBefore = screenToWorld(center.x, center.y);
-    const nextScale = clamp(state.touch.startScale * (dist / state.touch.startDist), 0.1, 18);
-    state.view.scale = nextScale;
-    state.view.offsetX = center.x - worldBefore.x * nextScale;
-    state.view.offsetY = center.y - worldBefore.y * nextScale;
+    if (state.touch.pinchIsMagnifier) {
+      if (!magnifierCanvas || state.magnifier.minimized) {
+        return;
+      }
+      const rect = magnifierCanvas.getBoundingClientRect();
+      const effectiveScale = state.magnifier.scale;
+      const worldX = (center.x - rect.width / 2) / effectiveScale + state.magnifier.x;
+      const worldY = (center.y - rect.height / 2) / effectiveScale + state.magnifier.y;
+      if (!isWithinImage(worldX, worldY)) {
+        return;
+      }
+      const minScaleX = rect.width / state.imageWidth;
+      const minScaleY = rect.height / state.imageHeight;
+      const minScale = Math.min(minScaleX, minScaleY);
+      const nextScale = clamp(state.touch.startScale * (dist / state.touch.startDist), minScale, 50);
+      state.magnifier.scale = nextScale;
+      state.magnifier.x = worldX - (center.x - rect.width / 2) / nextScale;
+      state.magnifier.y = worldY - (center.y - rect.height / 2) / nextScale;
+    } else {
+      const worldBefore = screenToWorld(center.x, center.y);
+      if (!isWithinImage(worldBefore.x, worldBefore.y)) {
+        return;
+      }
+      const nextScale = clamp(state.touch.startScale * (dist / state.touch.startDist), 0.1, 18);
+      state.view.scale = nextScale;
+      state.view.offsetX = center.x - worldBefore.x * nextScale;
+      state.view.offsetY = center.y - worldBefore.y * nextScale;
+    }
   }
 }
 
@@ -1556,6 +1763,7 @@ function onTouchEnd(event) {
   const remainingTouches = getTouchPoints(event);
   if (remainingTouches.length === 0) {
     state.magnifierActive = false;
+    state.touch.pinchIsMagnifier = false;
   }
   if (remainingTouches.length === 1) {
     const touch = remainingTouches[0];
@@ -1564,10 +1772,16 @@ function onTouchEnd(event) {
     state.touch.startY = touch.y;
     state.touch.lastX = touch.x;
     state.touch.lastY = touch.y;
-    state.touch.startOffsetX = state.view.offsetX;
-    state.touch.startOffsetY = state.view.offsetY;
+    if (touch.isMagnifier) {
+      state.dragging.startWorldX = state.magnifier.x;
+      state.dragging.startWorldY = state.magnifier.y;
+    } else {
+      state.touch.startOffsetX = state.view.offsetX;
+      state.touch.startOffsetY = state.view.offsetY;
+    }
     state.touch.startTime = Date.now();
     state.dragging.mode = "pan";
+    state.touch.pinchIsMagnifier = false;
     return;
   }
   if (remainingTouches.length > 1) {
@@ -1585,13 +1799,14 @@ function onTouchEnd(event) {
       }
     }
   }
-  if (state.touch.mode === "pan" && event.changedTouches && event.changedTouches.length) {
+  if ((state.touch.mode === "pan" || state.touch.mode === "swipeOnly")
+    && event.changedTouches && event.changedTouches.length) {
     const rect = canvas.getBoundingClientRect();
     const changed = event.changedTouches[0];
     state.touch.lastX = changed.clientX - rect.left;
     state.touch.lastY = changed.clientY - rect.top;
   }
-  if (state.touch.mode === "pan" && state.touch.swipeEligible) {
+  if ((state.touch.mode === "pan" || state.touch.mode === "swipeOnly") && state.touch.swipeEligible) {
     const dt = Date.now() - state.touch.startTime;
     const dx = state.touch.lastX - state.touch.startX;
     const dy = state.touch.lastY - state.touch.startY;
@@ -2037,7 +2252,32 @@ async function changeImage(nextIndex) {
       return;
     }
   }
-  await loadImage(nextIndex);
+  const viewState = {
+    scale: state.view.scale,
+    offsetX: state.view.offsetX,
+    offsetY: state.view.offsetY
+  };
+  const magnifierState = {
+    active: state.magnifier.active,
+    x: state.magnifier.x,
+    y: state.magnifier.y,
+    scale: state.magnifier.scale,
+    screenX: state.magnifier.screenX,
+    screenY: state.magnifier.screenY,
+    width: state.magnifier.width,
+    height: state.magnifier.height,
+    minimized: state.magnifier.minimized,
+    restoreWidth: state.magnifier.restoreWidth,
+    restoreHeight: state.magnifier.restoreHeight,
+    restoreX: state.magnifier.restoreX,
+    restoreY: state.magnifier.restoreY
+  };
+  await loadImage(nextIndex, {
+    preserveView: true,
+    preserveMagnifier: true,
+    viewState,
+    magnifierState
+  });
 }
 
 function markDirty() {
@@ -2340,6 +2580,204 @@ function cycleColorScheme() {
   setStatus(`Color scheme: ${scheme.name}`);
 }
 
+function getWorkspaceRect() {
+  if (workspace) {
+    return workspace.getBoundingClientRect();
+  }
+  return { width: window.innerWidth || 0, height: window.innerHeight || 0 };
+}
+
+function getOsdLineHeight() {
+  if (!osdEl || !window.getComputedStyle) {
+    return 18;
+  }
+  const styles = window.getComputedStyle(osdEl);
+  const lineHeight = parseFloat(styles.lineHeight);
+  if (Number.isFinite(lineHeight)) {
+    return lineHeight;
+  }
+  const fontSize = parseFloat(styles.fontSize);
+  if (Number.isFinite(fontSize)) {
+    return fontSize * 1.3;
+  }
+  return 18;
+}
+
+function ensureMagnifierAnchor() {
+  if (!Number.isFinite(state.magnifier.width) || state.magnifier.width <= 0) {
+    state.magnifier.width = MAGNIFIER_DEFAULT_WIDTH;
+  }
+  if (!Number.isFinite(state.magnifier.height) || state.magnifier.height <= 0) {
+    state.magnifier.height = MAGNIFIER_DEFAULT_HEIGHT;
+  }
+  if (!Number.isFinite(state.magnifier.restoreWidth) || state.magnifier.restoreWidth <= 0) {
+    state.magnifier.restoreWidth = state.magnifier.width;
+  }
+  if (!Number.isFinite(state.magnifier.restoreHeight) || state.magnifier.restoreHeight <= 0) {
+    state.magnifier.restoreHeight = state.magnifier.height;
+  }
+  if (!Number.isFinite(state.magnifier.restoreX)) {
+    state.magnifier.restoreX = state.magnifier.screenX;
+  }
+  if (!Number.isFinite(state.magnifier.restoreY)) {
+    state.magnifier.restoreY = state.magnifier.screenY;
+  }
+  if (!Number.isFinite(state.magnifier.screenX) || !Number.isFinite(state.magnifier.screenY)) {
+    const osdHeight = osdEl ? osdEl.offsetHeight : 100;
+    const extraOffset = osdEl ? getOsdLineHeight() * 2 : 0;
+    state.magnifier.screenX = 12;
+    state.magnifier.screenY = osdHeight + 24 + extraOffset;
+  }
+}
+
+function clampMagnifierPosition(left, top, width, height) {
+  const rect = getWorkspaceRect();
+  const maxLeft = Math.max(0, rect.width - width);
+  const maxTop = Math.max(0, rect.height - height);
+  return {
+    left: clamp(left, 0, maxLeft),
+    top: clamp(top, 0, maxTop)
+  };
+}
+
+function clampMagnifierSize(width, height, left, top) {
+  const rect = getWorkspaceRect();
+  const maxWidth = Math.max(40, rect.width - left);
+  const maxHeight = Math.max(40, rect.height - top);
+  const minWidth = Math.min(MAGNIFIER_MIN_WIDTH, maxWidth);
+  const minHeight = Math.min(MAGNIFIER_MIN_HEIGHT, maxHeight);
+  return {
+    width: clamp(width, minWidth, maxWidth),
+    height: clamp(height, minHeight, maxHeight)
+  };
+}
+
+function updateMagnifierMinimizeButton() {
+  if (!magnifierMinimizeBtn) {
+    return;
+  }
+  if (state.magnifier.minimized) {
+    magnifierMinimizeBtn.textContent = "+";
+    magnifierMinimizeBtn.title = "Restore magnifier";
+    magnifierMinimizeBtn.setAttribute("aria-label", "Restore magnifier");
+  } else {
+    magnifierMinimizeBtn.textContent = "-";
+    magnifierMinimizeBtn.title = "Minimize magnifier";
+    magnifierMinimizeBtn.setAttribute("aria-label", "Minimize magnifier");
+  }
+}
+
+function setMagnifierMinimized(next) {
+  state.magnifier.minimized = next;
+  if (next) {
+    state.magnifier.restoreWidth = state.magnifier.width;
+    state.magnifier.restoreHeight = state.magnifier.height;
+    state.magnifier.restoreX = state.magnifier.screenX;
+    state.magnifier.restoreY = state.magnifier.screenY;
+    const rect = getWorkspaceRect();
+    const centerX = state.magnifier.screenX + state.magnifier.width / 2;
+    if (centerX > rect.width / 2) {
+      state.magnifier.screenX = state.magnifier.screenX + state.magnifier.width - MAGNIFIER_MINIMIZED_SIZE;
+    }
+    state.magnifier.width = MAGNIFIER_MINIMIZED_SIZE;
+    state.magnifier.height = MAGNIFIER_MINIMIZED_SIZE;
+  } else {
+    const restoreWidth = Number.isFinite(state.magnifier.restoreWidth)
+      ? state.magnifier.restoreWidth
+      : MAGNIFIER_DEFAULT_WIDTH;
+    const restoreHeight = Number.isFinite(state.magnifier.restoreHeight)
+      ? state.magnifier.restoreHeight
+      : MAGNIFIER_DEFAULT_HEIGHT;
+    const restoreX = Number.isFinite(state.magnifier.restoreX)
+      ? state.magnifier.restoreX
+      : state.magnifier.screenX;
+    const restoreY = Number.isFinite(state.magnifier.restoreY)
+      ? state.magnifier.restoreY
+      : state.magnifier.screenY;
+    state.magnifier.width = restoreWidth;
+    state.magnifier.height = restoreHeight;
+    state.magnifier.screenX = restoreX;
+    state.magnifier.screenY = restoreY;
+  }
+  updateMagnifierMinimizeButton();
+}
+
+function beginMagnifierDrag(event, mode) {
+  if (!state.magnifier.active) {
+    return;
+  }
+  if (state.magnifier.minimized && mode === "resize") {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  ensureMagnifierAnchor();
+  const drag = state.magnifier.drag;
+  drag.mode = mode;
+  drag.pointerId = event.pointerId;
+  drag.startX = event.clientX;
+  drag.startY = event.clientY;
+  drag.startLeft = state.magnifier.screenX;
+  drag.startTop = state.magnifier.screenY;
+  drag.startWidth = state.magnifier.width;
+  drag.startHeight = state.magnifier.height;
+  drag.target = event.currentTarget;
+  if (drag.target && drag.target.setPointerCapture) {
+    drag.target.setPointerCapture(event.pointerId);
+  }
+}
+
+function onMagnifierDragMove(event) {
+  const drag = state.magnifier.drag;
+  if (!drag || !drag.mode) {
+    return;
+  }
+  if (drag.pointerId !== null && event.pointerId !== drag.pointerId) {
+    return;
+  }
+  event.preventDefault();
+  if (drag.mode === "move") {
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const nextLeft = drag.startLeft + dx;
+    const nextTop = drag.startTop + dy;
+    const clamped = clampMagnifierPosition(nextLeft, nextTop, state.magnifier.width, state.magnifier.height);
+    state.magnifier.screenX = clamped.left;
+    state.magnifier.screenY = clamped.top;
+    return;
+  }
+  if (drag.mode === "resize") {
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const rawWidth = drag.startWidth + dx;
+    const rawHeight = drag.startHeight + dy;
+    const nextSize = clampMagnifierSize(rawWidth, rawHeight, drag.startLeft, drag.startTop);
+    state.magnifier.width = nextSize.width;
+    state.magnifier.height = nextSize.height;
+    if (!state.magnifier.minimized) {
+      state.magnifier.restoreWidth = state.magnifier.width;
+      state.magnifier.restoreHeight = state.magnifier.height;
+    }
+  }
+}
+
+function endMagnifierDrag(event) {
+  const drag = state.magnifier.drag;
+  if (!drag || !drag.mode) {
+    return;
+  }
+  if (drag.pointerId !== null && event.pointerId !== drag.pointerId) {
+    return;
+  }
+  event.preventDefault();
+  if (drag.target && drag.target.releasePointerCapture) {
+    drag.target.releasePointerCapture(drag.pointerId);
+  }
+  drag.mode = null;
+  drag.pointerId = null;
+  drag.target = null;
+}
+
 function updateMagnifier() {
   if (!state.imageBitmap || !magnifierCanvas || !magCtx || !state.magnifier.active) {
     if (magnifier) magnifier.classList.add("hidden");
@@ -2347,6 +2785,7 @@ function updateMagnifier() {
   }
 
   magnifier.classList.remove("hidden");
+  magnifier.classList.toggle("minimized", state.magnifier.minimized);
   
   const selectedAnn = state.annotations[state.selection.objectIndex];
   if (selectedAnn) {
@@ -2355,6 +2794,36 @@ function updateMagnifier() {
     magnifier.style.borderColor = "var(--accent)";
   }
   
+  ensureMagnifierAnchor();
+  let width = state.magnifier.width;
+  let height = state.magnifier.height;
+  if (state.magnifier.minimized) {
+    width = MAGNIFIER_MINIMIZED_SIZE;
+    height = MAGNIFIER_MINIMIZED_SIZE;
+    state.magnifier.width = width;
+    state.magnifier.height = height;
+  } else {
+    const nextSize = clampMagnifierSize(width, height, state.magnifier.screenX, state.magnifier.screenY);
+    width = nextSize.width;
+    height = nextSize.height;
+    state.magnifier.width = width;
+    state.magnifier.height = height;
+    state.magnifier.restoreWidth = width;
+    state.magnifier.restoreHeight = height;
+  }
+  const clamped = clampMagnifierPosition(state.magnifier.screenX, state.magnifier.screenY, width, height);
+  state.magnifier.screenX = clamped.left;
+  state.magnifier.screenY = clamped.top;
+
+  magnifier.style.width = `${width}px`;
+  magnifier.style.height = `${height}px`;
+  magnifier.style.left = `${state.magnifier.screenX}px`;
+  magnifier.style.top = `${state.magnifier.screenY}px`;
+
+  if (state.magnifier.minimized) {
+    return;
+  }
+
   const rect = magnifier.getBoundingClientRect();
   if (magnifierCanvas.width !== rect.width || magnifierCanvas.height !== rect.height) {
     magnifierCanvas.width = rect.width;
@@ -2394,32 +2863,26 @@ function updateMagnifier() {
   magCtx.setTransform(1, 0, 0, 1, 0, 0);
   const cx = rect.width / 2;
   const cy = rect.height / 2;
-  const size = 15;
+  const crossSize = 15;
   
   magCtx.strokeStyle = "rgba(0,0,0,0.5)";
   magCtx.lineWidth = 3;
   magCtx.beginPath();
-  magCtx.moveTo(cx - size, cy);
-  magCtx.lineTo(cx + size, cy);
-  magCtx.moveTo(cx, cy - size);
-  magCtx.lineTo(cx, cy + size);
+  magCtx.moveTo(cx - crossSize, cy);
+  magCtx.lineTo(cx + crossSize, cy);
+  magCtx.moveTo(cx, cy - crossSize);
+  magCtx.lineTo(cx, cy + crossSize);
   magCtx.stroke();
 
   magCtx.strokeStyle = "rgba(255,255,255,0.8)";
   magCtx.lineWidth = 1;
   magCtx.beginPath();
-  magCtx.moveTo(cx - size, cy);
-  magCtx.lineTo(cx + size, cy);
-  magCtx.moveTo(cx, cy - size);
-  magCtx.lineTo(cx, cy + size);
+  magCtx.moveTo(cx - crossSize, cy);
+  magCtx.lineTo(cx + crossSize, cy);
+  magCtx.moveTo(cx, cy - crossSize);
+  magCtx.lineTo(cx, cy + crossSize);
   magCtx.stroke();
   
-  let targetLeft = 12;
-  let osdHeight = osdEl ? osdEl.offsetHeight : 100;
-  let targetTop = osdHeight + 24; 
-
-  magnifier.style.left = `${targetLeft}px`;
-  magnifier.style.top = `${targetTop}px`;
 }
 
 function pickThreshold(scale) {

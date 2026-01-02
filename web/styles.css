@@ -421,3 +421,74 @@ body::before {
   height: 100%;
   display: block;
 }
+
+.magnifier-handle {
+  position: absolute;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(29, 28, 26, 0.35);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  touch-action: none;
+}
+
+.magnifier-handle:active {
+  transform: scale(0.96);
+}
+
+.magnifier-handle-move {
+  top: -21px;
+  left: -21px;
+  cursor: move;
+}
+
+.magnifier-handle-minimize {
+  top: -21px;
+  right: -21px;
+  background: rgba(29, 111, 163, 0.9);
+  color: #fff;
+  border-color: rgba(29, 28, 26, 0.2);
+}
+
+.magnifier-handle-resize {
+  right: -21px;
+  bottom: -21px;
+  cursor: nwse-resize;
+}
+
+.magnifier.minimized canvas {
+  display: none;
+}
+
+.magnifier.minimized {
+  cursor: pointer;
+}
+
+.magnifier.minimized .magnifier-handle {
+  display: none;
+}
+
+.magnifier-minimized-plus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  display: none;
+  pointer-events: none;
+}
+
+.magnifier.minimized .magnifier-minimized-plus {
+  display: block;
+}

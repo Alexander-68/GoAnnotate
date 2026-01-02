@@ -17,6 +17,10 @@
       </div>
       <div class="osd" id="osd"></div>
       <div id="magnifier" class="magnifier hidden">
+        <button id="magnifierMove" class="magnifier-handle magnifier-handle-move" type="button" title="Drag to move magnifier" aria-label="Drag to move magnifier"></button>
+        <button id="magnifierMinimize" class="magnifier-handle magnifier-handle-minimize" type="button" title="Minimize magnifier" aria-label="Minimize magnifier">-</button>
+        <button id="magnifierResize" class="magnifier-handle magnifier-handle-resize" type="button" title="Drag to resize magnifier" aria-label="Drag to resize magnifier"></button>
+        <div id="magnifierMinimizedPlus" class="magnifier-minimized-plus" aria-hidden="true">+</div>
         <canvas id="magnifierCanvas"></canvas>
       </div>
       <canvas id="canvas"></canvas>
@@ -49,6 +53,7 @@
             <div class="key-item"><span>+ / -</span> <span>Change Class / Name</span></div>
             <div class="key-item"><span>Mouse Wheel</span> <span>Zoom</span></div>
             <div class="key-item"><span>Right Drag</span> <span>Pan</span></div>
+            <div class="key-item"><span>Magnifier Corners</span> <span>Drag TL move, drag BR resize, click TR minimize, click minimized square to restore</span></div>
         </div>
       </div>
     </div>

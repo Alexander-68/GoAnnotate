@@ -15,12 +15,15 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.     
 - Show keypoint names with visibility (e.g., `left ear:1`) on hover.
-- Show a cursor-centered magnifier window on left click or tap for precise inspection and editing.
+- Show a cursor-centered magnifier window on keypoint selection or double-click/tap for precise inspection and editing.
+- Keep the magnifier window anchored on screen once opened so selections inside it do not reposition the view.
+- Move, resize, or minimize the magnifier window using its corner handles.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Allow undo per image and clear undo history when switching images.
+- Preserve the current pan/zoom and magnifier state when switching images.
 - Use a full-screen canvas with overlay OSD and a top-right Load button to open the project popup.
 - Log loaded dataset paths with total and labeled image counts on load.
 - Automatically suggest a Labels Directory when an Images Directory is selected in the UI, prioritized as follows:
@@ -44,24 +47,31 @@ Keyboard
 - `+` / `-`: Change the selected keypoint name (available names only), or change the selected object class ID when no keypoint is selected.
 
 Mouse
-- Left click: Select keypoint (priority) or bounding box (shows magnifier).
+- Left click: Select keypoint (opens magnifier) or bounding box (selection only).
 - Left drag: Move the selected keypoint (shows magnifier).
 - Left drag on empty space or bbox: Pan the view (shows magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object (auto-selects an unused name).
 - Right drag or Space + drag: Pan the view.
-- Mouse wheel: Zoom (cursor-centered, faster step).
+- Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
+- Magnifier corners: Drag top-left to move, drag bottom-right to resize (free aspect), click top-right to minimize and click the minimized square to restore.
+- Double click: Center the magnifier on the cursor.
+- Click or drag outside the image: No action.
 
 Touch
-- Swipe right: Previous image (saves current labels before switching).
-- Swipe left: Next image (saves current labels before switching).
-- Tap a bounding box: Select the object (shows magnifier).
+- Swipe right: Previous image (saves current labels before switching, works outside the image too).
+- Swipe left: Next image (saves current labels before switching, works outside the image too).
+- Tap a bounding box: Select the object (selection only).
+- Tap a keypoint: Select it and open the magnifier.
 - Drag a keypoint: Move the selected keypoint (shows magnifier).
 - Drag a bounding box corner: Resize the bounding box.
 - One-finger drag: Pan the view (shows magnifier).
-- Pinch: Zoom in or out (centered on the pinch midpoint).
+- Pinch: Zoom in or out (centered on the pinch midpoint, only over the image).
+- Pinch inside the magnifier: Zoom the magnifier view.
+- Double tap: Center the magnifier on the tap.
+- Touch outside the image: No action.
 
 UI
 - The app opens with the project popup visible on start.
@@ -70,6 +80,7 @@ UI
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
+- Click the minimized magnifier (plus sign) to restore it after minimizing.
 
 ## Run
 
