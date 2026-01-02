@@ -5,8 +5,10 @@ const labelsDirInput = document.getElementById("labelsDir");
 const imagesDirList = document.getElementById("imagesDirList");
 const labelsDirList = document.getElementById("labelsDirList");
 const openModalBtn = document.getElementById("openModalBtn");
+const openHelpBtn = document.getElementById("openHelpBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
+const helpModal = document.getElementById("helpModal");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
 const browseLabelsBtn = document.getElementById("browseLabelsBtn");
 const folderPicker = document.getElementById("folderPicker");
@@ -18,6 +20,9 @@ const pickerCancelBtn = document.getElementById("pickerCancelBtn");
 const pickerSelectBtn = document.getElementById("pickerSelectBtn");
 const osdEl = document.getElementById("osd");
 const labelsSection = document.getElementById("labelsSection");
+const magnifier = document.getElementById("magnifier");
+const magnifierCanvas = document.getElementById("magnifierCanvas");
+const magCtx = magnifierCanvas ? magnifierCanvas.getContext("2d") : null;
 
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
@@ -206,6 +211,14 @@ const state = {
     startDist: 0,
     swipeEligible: false
   },
+  magnifier: {
+    active: false,
+    x: 0, // world x center
+    y: 0, // world y center
+    scale: 5,
+    screenX: 0,
+    screenY: 0
+  },
   spaceDown: false,
   dirty: false,
   modifiedSinceLoad: false,
@@ -228,6 +241,17 @@ function init() {
 
   openModalBtn.addEventListener("click", () => {
     openModal();
+  });
+
+  openHelpBtn.addEventListener("click", () => {
+    openHelp();
+  });
+
+  helpModal.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target && target.dataset && target.dataset.close) {
+      closeHelp();
+    }
   });
 
   confirmLoadBtn.addEventListener("click", () => {
@@ -278,6 +302,7 @@ function init() {
     }
   });
 
+  // Main Canvas Events
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseleave", () => clearHover());
@@ -288,6 +313,19 @@ function init() {
   canvas.addEventListener("touchmove", onTouchMove, { passive: false });
   canvas.addEventListener("touchend", onTouchEnd, { passive: false });
   canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+  // Magnifier Events
+  if (magnifierCanvas) {
+    magnifierCanvas.addEventListener("mousedown", onMouseDown);
+    magnifierCanvas.addEventListener("mousemove", onMouseMove);
+    magnifierCanvas.addEventListener("mouseleave", () => clearHover());
+    magnifierCanvas.addEventListener("wheel", onWheel, { passive: false });
+    magnifierCanvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    magnifierCanvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    magnifierCanvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    magnifierCanvas.addEventListener("touchend", onTouchEnd, { passive: false });
+  }
+
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.close) {
@@ -326,6 +364,16 @@ function closeModal() {
   loadModal.classList.add("hidden");
   loadModal.setAttribute("aria-hidden", "true");
   closePicker();
+}
+
+function openHelp() {
+  helpModal.classList.remove("hidden");
+  helpModal.setAttribute("aria-hidden", "false");
+}
+
+function closeHelp() {
+  helpModal.classList.add("hidden");
+  helpModal.setAttribute("aria-hidden", "true");
 }
 
 async function openPicker(target, title) {
@@ -707,43 +755,45 @@ function render() {
       if (!annotation) {
         continue;
       }
-      drawAnnotation(annotation, idx === state.selection.objectIndex);
+      drawAnnotation(ctx, viewScale, annotation, idx === state.selection.objectIndex);
     }
     if (state.dragging.mode === "newBBox") {
-      drawNewBBox();
+      drawNewBBox(ctx, viewScale);
     }
     drawObjectLabels(visible);
     drawHoverLabel();
+
+    updateMagnifier();
   }
 
   updateOsd();
   requestAnimationFrame(render);
 }
 
-function drawAnnotation(annotation, isActive) {
-  drawBBox(annotation, isActive);
+function drawAnnotation(ctx, scale, annotation, isActive) {
+  drawBBox(ctx, scale, annotation, isActive);
   if (annotation.hasPose) {
-    drawSkeleton(annotation, isActive);
-    drawKeypoints(annotation, isActive);
+    drawSkeleton(ctx, scale, annotation, isActive);
+    drawKeypoints(ctx, scale, annotation, isActive);
   }
 }
 
-function drawBBox(annotation, isActive) {
+function drawBBox(ctx, scale, annotation, isActive) {
   const color = getClassColor(annotation.classId);
   const { x, y, w, h } = bboxToPixels(annotation.bbox);
   ctx.strokeStyle = color;
-  ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
+  ctx.lineWidth = toWorldSize(isActive ? 2 : 1, scale);
   ctx.strokeRect(x, y, w, h);
 
   if (isActive) {
     ctx.fillStyle = "rgba(29, 28, 26, 0.08)";
     ctx.fillRect(x, y, w, h);
-    drawCorners(x, y, w, h);
+    drawCorners(ctx, scale, x, y, w, h);
   }
 }
 
-function drawCorners(x, y, w, h) {
-  const size = toWorldSize(8);
+function drawCorners(ctx, scale, x, y, w, h) {
+  const size = toWorldSize(8, scale);
   const corners = [
     [x, y],
     [x + w, y],
@@ -756,7 +806,7 @@ function drawCorners(x, y, w, h) {
   }
 }
 
-function drawNewBBox() {
+function drawNewBBox(ctx, scale) {
   const { startWorldX, startWorldY, currentWorldX, currentWorldY } = state.dragging;
   if (!Number.isFinite(startWorldX) || !Number.isFinite(startWorldY)) {
     return;
@@ -776,16 +826,16 @@ function drawNewBBox() {
   const color = getClassColor(classId);
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = toWorldSize(2);
-  ctx.setLineDash([toWorldSize(6), toWorldSize(4)]);
+  ctx.lineWidth = toWorldSize(2, scale);
+  ctx.setLineDash([toWorldSize(6, scale), toWorldSize(4, scale)]);
   ctx.strokeRect(x, y, w, h);
   ctx.restore();
 }
 
-function drawSkeleton(annotation, isActive) {
+function drawSkeleton(ctx, scale, annotation, isActive) {
   const scheme = getColorScheme();
   ctx.strokeStyle = isActive ? scheme.skeleton.active : scheme.skeleton.inactive;
-  ctx.lineWidth = toWorldSize(isActive ? 2 : 1);
+  ctx.lineWidth = toWorldSize(isActive ? 2 : 1, scale);
   for (const [a, b] of SKELETON) {
     const kpA = annotation.keypoints[a];
     const kpB = annotation.keypoints[b];
@@ -801,7 +851,7 @@ function drawSkeleton(annotation, isActive) {
   }
 }
 
-function drawKeypoints(annotation, isActive) {
+function drawKeypoints(ctx, scale, annotation, isActive) {
   const baseRadius = 4;
   const scheme = getColorScheme();
   for (let i = 0; i < annotation.keypoints.length; i += 1) {
@@ -811,16 +861,16 @@ function drawKeypoints(annotation, isActive) {
     }
     const pos = keypointToPixels(kp);
     const isSelected = isActive && state.selection.keypointIndex === i;
-    const radius = toWorldSize(isSelected ? 6 : baseRadius);
+    const radius = toWorldSize(isSelected ? 6 : baseRadius, scale);
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
     const visColor = scheme.visColors[kp.v] || scheme.visColors[2];
     ctx.strokeStyle = visColor;
-    ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5);
+    ctx.lineWidth = toWorldSize(isSelected ? 2 : 1.5, scale);
     ctx.stroke();
     if (isSelected) {
       ctx.strokeStyle = "#1d1c1a";
-      ctx.lineWidth = toWorldSize(2.5);
+      ctx.lineWidth = toWorldSize(2.5, scale);
       ctx.stroke();
     }
   }
@@ -860,14 +910,14 @@ function drawHoverLabel() {
   const { dpr, width, height } = state.canvasSize;
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = "12px 'Space Grotesk', 'Trebuchet MS', sans-serif";
+  ctx.font = "15px 'Space Grotesk', 'Trebuchet MS', sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  const paddingX = 6;
-  const paddingY = 3;
+  const paddingX = 7.5;
+  const paddingY = 3.75;
   const textWidth = ctx.measureText(label).width;
   const boxWidth = textWidth + paddingX * 2;
-  const boxHeight = 18;
+  const boxHeight = 22.5;
   let boxX = state.hover.screenX + 12;
   let boxY = state.hover.screenY - boxHeight - 8;
   if (boxX + boxWidth > width - 4) {
@@ -900,7 +950,12 @@ function updateOsd() {
   const resLine = state.imageWidth && state.imageHeight
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
     : "Resolution: -";
-  const zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
+  
+  let zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
+  if (state.magnifier.active) {
+    zoomLine += ` (${Math.round(state.magnifier.scale * 100)}%)`;
+  }
+
   const statusLine = `Status: ${state.statusText}`;
   const modLine = `Modified: ${state.modifiedSinceLoad ? "Yes" : "No"}`;
   const objectsLines = buildObjectLines();
@@ -981,9 +1036,10 @@ function keypointToPixels(kp) {
   };
 }
 
-function toWorldSize(sizePx) {
-  const scale = Math.max(state.view.scale, 0.0001);
-  return sizePx / scale;
+function toWorldSize(sizePx, scale) {
+  const s = scale !== undefined ? scale : state.view.scale;
+  const effective = Math.max(s, 0.0001);
+  return sizePx / effective;
 }
 
 function screenToWorld(screenX, screenY) {
@@ -1006,19 +1062,39 @@ function onMouseDown(event) {
   if (!state.imageBitmap) {
     return;
   }
+  
+  const pos = getPointerState(event);
+  const { worldX, worldY, isMagnifier } = pos;
+  state.lastMouse.screenX = pos.screenX;
+  state.lastMouse.screenY = pos.screenY;
+
+  // On left click, activate magnifier and set its center
+  if (event.button === 0) {
+    state.magnifier.active = true;
+    // If clicking on main canvas, update magnifier to look at this spot
+    if (!isMagnifier) {
+      state.magnifier.x = worldX;
+      state.magnifier.y = worldY;
+    }
+  }
+
   state.dragging.snapshotTaken = false;
   state.dragging.pendingSelection = null;
+  state.dragging.isMagnifier = isMagnifier; // Latch context
   clearHover();
-  const { screenX, screenY, worldX, worldY } = getMousePos(event);
-  state.lastMouse.screenX = screenX;
-  state.lastMouse.screenY = screenY;
 
+  // Use GLOBAL coordinates for startX/Y to handle dragging out of bounds
   if (event.button === 2 || event.button === 1 || state.spaceDown) {
     state.dragging.mode = "pan";
-    state.dragging.startX = screenX;
-    state.dragging.startY = screenY;
-    state.dragging.startOffsetX = state.view.offsetX;
-    state.dragging.startOffsetY = state.view.offsetY;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
+    if (isMagnifier) {
+      state.dragging.startWorldX = state.magnifier.x;
+      state.dragging.startWorldY = state.magnifier.y;
+    } else {
+      state.dragging.startOffsetX = state.view.offsetX;
+      state.dragging.startOffsetY = state.view.offsetY;
+    }
     return;
   }
 
@@ -1033,6 +1109,9 @@ function onMouseDown(event) {
       state.dragging.startWorldY = worldY;
       state.dragging.currentWorldX = worldX;
       state.dragging.currentWorldY = worldY;
+      // Also latch start for consistency
+      state.dragging.startX = event.clientX;
+      state.dragging.startY = event.clientY;
       return;
     }
     const addedIndex = addKeypointAt(state.selection.objectIndex, worldX, worldY);
@@ -1041,33 +1120,46 @@ function onMouseDown(event) {
       state.dragging.startWorldX = worldX;
       state.dragging.startWorldY = worldY;
       state.dragging.snapshotTaken = true;
+      state.dragging.startX = event.clientX;
+      state.dragging.startY = event.clientY;
     }
     return;
   }
 
-  const keyPick = pickKeypoint(screenX, screenY);
+  const keyPick = pickKeypoint(worldX, worldY, pos.scale);
   if (keyPick) {
     setSelection(keyPick.objectIndex, keyPick.keypointIndex, null);
     state.dragging.mode = "keypoint";
     state.dragging.startWorldX = worldX;
     state.dragging.startWorldY = worldY;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
-  const cornerPick = pickCorner(screenX, screenY);
+  const cornerPick = pickCorner(worldX, worldY, pos.scale);
   if (cornerPick) {
     setSelection(cornerPick.objectIndex, -1, cornerPick.corner);
     state.dragging.mode = "bboxCorner";
     state.dragging.startCorners = cornerPick.corners;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
-  const bboxPick = pickBBox(screenX, screenY);
+  const bboxPick = pickBBox(worldX, worldY);
   state.dragging.mode = "pendingPan";
-  state.dragging.startX = screenX;
-  state.dragging.startY = screenY;
-  state.dragging.startOffsetX = state.view.offsetX;
-  state.dragging.startOffsetY = state.view.offsetY;
+  state.dragging.startX = event.clientX;
+  state.dragging.startY = event.clientY;
+  
+  if (isMagnifier) {
+      state.dragging.startWorldX = state.magnifier.x;
+      state.dragging.startWorldY = state.magnifier.y;
+  } else {
+      state.dragging.startOffsetX = state.view.offsetX;
+      state.dragging.startOffsetY = state.view.offsetY;
+  }
+  
   state.dragging.pendingSelection = bboxPick
     ? { objectIndex: bboxPick.objectIndex, keypointIndex: -1, corner: null }
     : null;
@@ -1077,20 +1169,28 @@ function onMouseMove(event) {
   if (!state.imageBitmap) {
     return;
   }
-  const { screenX, screenY, worldX, worldY } = getMousePos(event);
-  state.lastMouse.screenX = screenX;
-  state.lastMouse.screenY = screenY;
+  
+  // Determine context: latched context if dragging, else current target
+  const isMagnifier = state.dragging.mode ? state.dragging.isMagnifier : (event.target === magnifierCanvas);
+  
+  // Get pointer state forcing the determined context
+  const pos = getPointerState(event, isMagnifier);
+  const { worldX, worldY } = pos;
+  
+  state.lastMouse.screenX = event.clientX; // Rough global pos for general use
+  state.lastMouse.screenY = event.clientY;
 
+  // If not dragging, update hover (using correct context)
   if (!state.dragging.mode) {
-    updateHover(screenX, screenY);
+    updateHover(worldX, worldY, pos.scale);
     return;
   }
 
   clearHover();
 
   if (state.dragging.mode === "pendingPan") {
-    const dx = screenX - state.dragging.startX;
-    const dy = screenY - state.dragging.startY;
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
     if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
       return;
     }
@@ -1099,16 +1199,30 @@ function onMouseMove(event) {
   }
 
   if (state.dragging.mode === "pan") {
-    const dx = screenX - state.dragging.startX;
-    const dy = screenY - state.dragging.startY;
-    state.view.offsetX = state.dragging.startOffsetX + dx;
-    state.view.offsetY = state.dragging.startOffsetY + dy;
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
+    
+    if (isMagnifier) {
+         // Magnifier Pan: move center opposite to drag direction
+         const effectiveScale = pos.scale;
+         state.magnifier.x = state.dragging.startWorldX - dx / effectiveScale;
+         state.magnifier.y = state.dragging.startWorldY - dy / effectiveScale;
+    } else {
+        // Main Pan
+        state.view.offsetX = state.dragging.startOffsetX + dx;
+        state.view.offsetY = state.dragging.startOffsetY + dy;
+    }
     return;
   }
 
   if (state.dragging.mode === "newBBox") {
     state.dragging.currentWorldX = worldX;
     state.dragging.currentWorldY = worldY;
+    // Follow with magnifier if main drag
+    if (!isMagnifier) {
+      state.magnifier.x = worldX;
+      state.magnifier.y = worldY;
+    }
     return;
   }
 
@@ -1131,6 +1245,13 @@ function onMouseMove(event) {
       kp.v = 2;
       annotation.hasPose = true;
     }
+    
+    // Follow with magnifier if dragging on main
+    if (!isMagnifier) {
+      state.magnifier.x = worldX;
+      state.magnifier.y = worldY;
+    }
+    
     markDirty();
   }
 
@@ -1149,15 +1270,23 @@ function onMouseMove(event) {
     bbox.cy = (minY + maxY) / 2;
     bbox.w = Math.max(0.0001, maxX - minX);
     bbox.h = Math.max(0.0001, maxY - minY);
+    
+    // Follow with magnifier if dragging on main
+    if (!isMagnifier) {
+      state.magnifier.x = worldX;
+      state.magnifier.y = worldY;
+    }
+    
     markDirty();
   }
 }
 
 function onMouseUp(event) {
+  // state.magnifierActive = false; // REMOVED: Magnifier stays open
+  
   if (state.dragging.mode === "pendingPan") {
-    const { screenX, screenY } = getMousePos(event);
-    const dx = screenX - state.dragging.startX;
-    const dy = screenY - state.dragging.startY;
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
     if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
       if (state.dragging.pendingSelection) {
         const { objectIndex, keypointIndex, corner } = state.dragging.pendingSelection;
@@ -1185,12 +1314,41 @@ function onWheel(event) {
   event.preventDefault();
   const delta = Math.sign(event.deltaY);
   const zoomFactor = delta > 0 ? 0.85 : 1.15;
-  const { screenX, screenY } = getMousePos(event);
-  const worldBefore = screenToWorld(screenX, screenY);
-  const nextScale = clamp(state.view.scale * zoomFactor, 0.1, 18);
-  state.view.scale = nextScale;
-  state.view.offsetX = screenX - worldBefore.x * nextScale;
-  state.view.offsetY = screenY - worldBefore.y * nextScale;
+  
+  const pos = getPointerState(event);
+  const { isMagnifier, worldX, worldY } = pos;
+  
+  if (isMagnifier) {
+      const rect = magnifierCanvas.getBoundingClientRect();
+      const screenX = event.clientX - rect.left;
+      const screenY = event.clientY - rect.top;
+      
+      // Calculate min scale to fit the entire image in the magnifier
+      const minScaleX = rect.width / state.imageWidth;
+      const minScaleY = rect.height / state.imageHeight;
+      const minScale = Math.min(minScaleX, minScaleY);
+
+      const currentScale = state.magnifier.scale;
+      const nextScale = clamp(currentScale * zoomFactor, minScale, 50);
+      
+      const newX = worldX - (screenX - rect.width / 2) / nextScale;
+      const newY = worldY - (screenY - rect.height / 2) / nextScale;
+      
+      state.magnifier.scale = nextScale;
+      state.magnifier.x = newX;
+      state.magnifier.y = newY;
+  } else {
+      const nextScale = clamp(state.view.scale * zoomFactor, 0.1, 18);
+      state.view.scale = nextScale;
+      
+      const rect = canvas.getBoundingClientRect();
+      const localScreenX = event.clientX - rect.left;
+      const localScreenY = event.clientY - rect.top;
+      
+      state.view.scale = nextScale;
+      state.view.offsetX = localScreenX - worldX * nextScale;
+      state.view.offsetY = localScreenY - worldY * nextScale;
+  }
 }
 
 function onTouchStart(event) {
@@ -1198,31 +1356,37 @@ function onTouchStart(event) {
     return;
   }
   event.preventDefault();
-  clearHover();
-  state.dragging.mode = null;
-  state.dragging.snapshotTaken = false;
-  state.dragging.pendingSelection = null;
   const touches = getTouchPoints(event);
+  
   if (touches.length === 1) {
     const touch = touches[0];
-    const screenX = touch.x;
-    const screenY = touch.y;
-    const world = screenToWorld(screenX, screenY);
-    state.lastMouse.screenX = screenX;
-    state.lastMouse.screenY = screenY;
+    state.magnifier.active = true;
+    if (!touch.isMagnifier) {
+        state.magnifier.x = touch.worldX;
+        state.magnifier.y = touch.worldY;
+    }
+    
+    clearHover();
+    state.dragging.mode = null;
+    state.dragging.snapshotTaken = false;
+    state.dragging.pendingSelection = null;
+    
+    state.lastMouse.screenX = touch.x;
+    state.lastMouse.screenY = touch.y;
 
-    const keyPick = pickKeypoint(screenX, screenY);
+    const scale = touch.isMagnifier ? state.magnifier.scale : state.view.scale;
+    const keyPick = pickKeypoint(touch.worldX, touch.worldY, scale);
     if (keyPick) {
       setSelection(keyPick.objectIndex, keyPick.keypointIndex, null);
       state.dragging.mode = "keypoint";
-      state.dragging.startWorldX = world.x;
-      state.dragging.startWorldY = world.y;
+      state.dragging.startWorldX = touch.worldX;
+      state.dragging.startWorldY = touch.worldY;
       state.touch.mode = "keypoint";
       state.touch.swipeEligible = false;
       return;
     }
 
-    const cornerPick = pickCorner(screenX, screenY);
+    const cornerPick = pickCorner(touch.worldX, touch.worldY, scale);
     if (cornerPick) {
       setSelection(cornerPick.objectIndex, -1, cornerPick.corner);
       state.dragging.mode = "bboxCorner";
@@ -1232,17 +1396,24 @@ function onTouchStart(event) {
       return;
     }
 
-    const bboxPick = pickBBox(screenX, screenY);
+    const bboxPick = pickBBox(touch.worldX, touch.worldY);
     state.dragging.mode = "pendingPan";
-    state.dragging.startX = screenX;
-    state.dragging.startY = screenY;
-    state.dragging.startOffsetX = state.view.offsetX;
-    state.dragging.startOffsetY = state.view.offsetY;
+    state.dragging.startX = touch.x;
+    state.dragging.startY = touch.y;
+    
+    if (touch.isMagnifier) {
+        state.dragging.startWorldX = state.magnifier.x;
+        state.dragging.startWorldY = state.magnifier.y;
+    } else {
+        state.dragging.startOffsetX = state.view.offsetX;
+        state.dragging.startOffsetY = state.view.offsetY;
+    }
+    
     state.dragging.pendingSelection = bboxPick
       ? { objectIndex: bboxPick.objectIndex, keypointIndex: -1, corner: null }
       : null;
     state.touch.mode = "pendingPan";
-    state.touch.swipeEligible = !bboxPick;
+    state.touch.swipeEligible = !bboxPick && !touch.isMagnifier;
     state.touch.startX = touch.x;
     state.touch.startY = touch.y;
     state.touch.lastX = touch.x;
@@ -1250,10 +1421,10 @@ function onTouchStart(event) {
     state.touch.startOffsetX = state.view.offsetX;
     state.touch.startOffsetY = state.view.offsetY;
     state.touch.startTime = Date.now();
-    state.touch.swipeEligible = true;
     return;
   }
   if (touches.length === 2) {
+    state.magnifier.active = false;
     const dist = touchDistance(touches[0], touches[1]);
     state.dragging.mode = null;
     state.touch.mode = "pinch";
@@ -1272,15 +1443,15 @@ function onTouchMove(event) {
   const touches = getTouchPoints(event);
   if (touches.length === 1) {
     const touch = touches[0];
-    const screenX = touch.x;
-    const screenY = touch.y;
-    const world = screenToWorld(screenX, screenY);
-    state.touch.lastX = screenX;
-    state.touch.lastY = screenY;
+    const { worldX, worldY, isMagnifier } = touch;
+    state.touch.lastX = touch.x;
+    state.touch.lastY = touch.y;
+    state.lastMouse.screenX = touch.x;
+    state.lastMouse.screenY = touch.y;
 
     if (state.touch.mode === "pendingPan") {
-      const dx = screenX - state.dragging.startX;
-      const dy = screenY - state.dragging.startY;
+      const dx = touch.x - state.dragging.startX;
+      const dy = touch.y - state.dragging.startY;
       if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
         return;
       }
@@ -1290,10 +1461,17 @@ function onTouchMove(event) {
     }
 
     if (state.touch.mode === "pan") {
-      const dx = screenX - state.touch.startX;
-      const dy = screenY - state.touch.startY;
-      state.view.offsetX = state.touch.startOffsetX + dx;
-      state.view.offsetY = state.touch.startOffsetY + dy;
+      const dx = touch.x - state.touch.startX;
+      const dy = touch.y - state.touch.startY;
+      
+      if (isMagnifier) {
+          const effectiveScale = state.magnifier.scale;
+          state.magnifier.x = state.dragging.startWorldX - dx / effectiveScale;
+          state.magnifier.y = state.dragging.startWorldY - dy / effectiveScale;
+      } else {
+          state.view.offsetX = state.touch.startOffsetX + dx;
+          state.view.offsetY = state.touch.startOffsetY + dy;
+      }
       return;
     }
 
@@ -1307,13 +1485,17 @@ function onTouchMove(event) {
         return;
       }
       ensureUndoSnapshot();
-      const nx = clamp(world.x / state.imageWidth, 0, 1);
-      const ny = clamp(world.y / state.imageHeight, 0, 1);
+      const nx = clamp(worldX / state.imageWidth, 0, 1);
+      const ny = clamp(worldY / state.imageHeight, 0, 1);
       kp.x = nx;
       kp.y = ny;
       if (kp.v === 0) {
         kp.v = 2;
         annotation.hasPose = true;
+      }
+      if (!isMagnifier) {
+          state.magnifier.x = worldX;
+          state.magnifier.y = worldY;
       }
       markDirty();
       return;
@@ -1330,8 +1512,8 @@ function onTouchMove(event) {
       if (!corners) {
         return;
       }
-      const nx = clamp(world.x / state.imageWidth, 0, 1);
-      const ny = clamp(world.y / state.imageHeight, 0, 1);
+      const nx = clamp(worldX / state.imageWidth, 0, 1);
+      const ny = clamp(worldY / state.imageHeight, 0, 1);
       const updated = updateCorners(corners, state.selection.corner, nx, ny);
       const minX = clamp(Math.min(updated.x1, updated.x2), 0, 1);
       const maxX = clamp(Math.max(updated.x1, updated.x2), 0, 1);
@@ -1341,6 +1523,10 @@ function onTouchMove(event) {
       bbox.cy = (minY + maxY) / 2;
       bbox.w = Math.max(0.0001, maxX - minX);
       bbox.h = Math.max(0.0001, maxY - minY);
+      if (!isMagnifier) {
+          state.magnifier.x = worldX;
+          state.magnifier.y = worldY;
+      }
       markDirty();
       return;
     }
@@ -1363,10 +1549,14 @@ function onTouchMove(event) {
 
 function onTouchEnd(event) {
   if (!state.imageBitmap || !state.touch.mode) {
+    state.magnifierActive = false;
     return;
   }
   event.preventDefault();
   const remainingTouches = getTouchPoints(event);
+  if (remainingTouches.length === 0) {
+    state.magnifierActive = false;
+  }
   if (remainingTouches.length === 1) {
     const touch = remainingTouches[0];
     state.touch.mode = "pan";
@@ -1423,9 +1613,15 @@ function onTouchEnd(event) {
 }
 
 function onKeyDown(event) {
-  if (event.code === "Escape" && !loadModal.classList.contains("hidden")) {
-    closeModal();
-    return;
+  if (event.code === "Escape") {
+    if (!loadModal.classList.contains("hidden")) {
+      closeModal();
+      return;
+    }
+    if (!helpModal.classList.contains("hidden")) {
+      closeHelp();
+      return;
+    }
   }
   if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
     return;
@@ -2044,13 +2240,13 @@ function selectPrevObject() {
   setSelection(prev, -1, null);
 }
 
-function updateHover(screenX, screenY) {
-  const pick = pickKeypoint(screenX, screenY);
+function updateHover(worldX, worldY, scale) {
+  const pick = pickKeypoint(worldX, worldY, scale);
   if (pick) {
     state.hover.objectIndex = pick.objectIndex;
     state.hover.keypointIndex = pick.keypointIndex;
-    state.hover.screenX = screenX;
-    state.hover.screenY = screenY;
+    state.hover.screenX = state.lastMouse.screenX;
+    state.hover.screenY = state.lastMouse.screenY;
     return;
   }
   clearHover();
@@ -2061,26 +2257,49 @@ function clearHover() {
   state.hover.keypointIndex = -1;
 }
 
-function getMousePos(event) {
-  const rect = canvas.getBoundingClientRect();
+function getPointerState(event, forcedMagnifier = null) {
+  const isMagnifier = forcedMagnifier !== null ? forcedMagnifier : (event.target === magnifierCanvas);
+  const target = isMagnifier ? magnifierCanvas : canvas;
+  const rect = target.getBoundingClientRect();
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
+  
+  if (isMagnifier) {
+    const effectiveScale = state.magnifier.scale;
+    // worldX = (screenX - width/2) / scale + centerX
+    const worldX = (screenX - rect.width / 2) / effectiveScale + state.magnifier.x;
+    const worldY = (screenY - rect.height / 2) / effectiveScale + state.magnifier.y;
+    return { screenX: event.clientX, screenY: event.clientY, worldX, worldY, scale: effectiveScale, isMagnifier: true };
+  }
+  
   const world = screenToWorld(screenX, screenY);
-  return {
-    screenX,
-    screenY,
-    worldX: world.x,
-    worldY: world.y
-  };
+  return { screenX: event.clientX, screenY: event.clientY, worldX: world.x, worldY: world.y, scale: state.view.scale, isMagnifier: false };
+}
+
+function getMousePos(event) {
+  return getPointerState(event);
 }
 
 function getTouchPoints(event) {
-  const rect = canvas.getBoundingClientRect();
   const touches = event.touches ? Array.from(event.touches) : [];
-  return touches.map((touch) => ({
-    x: touch.clientX - rect.left,
-    y: touch.clientY - rect.top
-  }));
+  const target = event.target;
+  const rect = target.getBoundingClientRect();
+  const isMagnifier = target === magnifierCanvas;
+  
+  return touches.map((touch) => {
+    const screenX = touch.clientX - rect.left;
+    const screenY = touch.clientY - rect.top;
+    
+    if (isMagnifier) {
+      const effectiveScale = state.magnifier.scale;
+      const worldX = (screenX - rect.width / 2) / effectiveScale + state.magnifier.x;
+      const worldY = (screenY - rect.height / 2) / effectiveScale + state.magnifier.y;
+      return { x: screenX, y: screenY, worldX, worldY, isMagnifier };
+    }
+    
+    const world = screenToWorld(screenX, screenY);
+    return { x: screenX, y: screenY, worldX: world.x, worldY: world.y, isMagnifier };
+  });
 }
 
 function touchDistance(a, b) {
@@ -2119,6 +2338,151 @@ function cycleColorScheme() {
   state.colorSchemeIndex = (state.colorSchemeIndex + 1) % COLOR_SCHEMES.length;
   const scheme = getColorScheme();
   setStatus(`Color scheme: ${scheme.name}`);
+}
+
+function updateMagnifier() {
+  if (!state.imageBitmap || !magnifierCanvas || !magCtx || !state.magnifier.active) {
+    if (magnifier) magnifier.classList.add("hidden");
+    return;
+  }
+
+  magnifier.classList.remove("hidden");
+  
+  const selectedAnn = state.annotations[state.selection.objectIndex];
+  if (selectedAnn) {
+    magnifier.style.borderColor = getClassColor(selectedAnn.classId);
+  } else {
+    magnifier.style.borderColor = "var(--accent)";
+  }
+  
+  const rect = magnifier.getBoundingClientRect();
+  if (magnifierCanvas.width !== rect.width || magnifierCanvas.height !== rect.height) {
+    magnifierCanvas.width = rect.width;
+    magnifierCanvas.height = rect.height;
+  }
+
+  magCtx.setTransform(1, 0, 0, 1, 0, 0);
+  magCtx.clearRect(0, 0, rect.width, rect.height);
+  magCtx.fillStyle = "#fff";
+  magCtx.fillRect(0, 0, rect.width, rect.height);
+
+  const effectiveScale = state.magnifier.scale;
+  
+  const worldX = state.magnifier.x;
+  const worldY = state.magnifier.y;
+
+  const transX = -worldX * effectiveScale + rect.width / 2;
+  const transY = -worldY * effectiveScale + rect.height / 2;
+
+  magCtx.imageSmoothingEnabled = false;
+  magCtx.setTransform(effectiveScale, 0, 0, effectiveScale, transX, transY);
+  magCtx.drawImage(state.imageBitmap, 0, 0);
+
+  const visible = getVisibleIndices();
+  for (const idx of visible) {
+    const annotation = state.annotations[idx];
+    if (!annotation) {
+      continue;
+    }
+    drawAnnotation(magCtx, effectiveScale, annotation, idx === state.selection.objectIndex);
+  }
+
+  if (state.dragging.mode === "newBBox") {
+    drawNewBBox(magCtx, effectiveScale);
+  }
+
+  magCtx.setTransform(1, 0, 0, 1, 0, 0);
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  const size = 15;
+  
+  magCtx.strokeStyle = "rgba(0,0,0,0.5)";
+  magCtx.lineWidth = 3;
+  magCtx.beginPath();
+  magCtx.moveTo(cx - size, cy);
+  magCtx.lineTo(cx + size, cy);
+  magCtx.moveTo(cx, cy - size);
+  magCtx.lineTo(cx, cy + size);
+  magCtx.stroke();
+
+  magCtx.strokeStyle = "rgba(255,255,255,0.8)";
+  magCtx.lineWidth = 1;
+  magCtx.beginPath();
+  magCtx.moveTo(cx - size, cy);
+  magCtx.lineTo(cx + size, cy);
+  magCtx.moveTo(cx, cy - size);
+  magCtx.lineTo(cx, cy + size);
+  magCtx.stroke();
+  
+  let targetLeft = 12;
+  let osdHeight = osdEl ? osdEl.offsetHeight : 100;
+  let targetTop = osdHeight + 24; 
+
+  magnifier.style.left = `${targetLeft}px`;
+  magnifier.style.top = `${targetTop}px`;
+}
+
+function pickThreshold(scale) {
+  return 10 / scale;
+}
+
+function pickKeypoint(worldX, worldY, scale) {
+  const radius = pickThreshold(scale);
+  const order = buildPickOrder();
+  for (const idx of order) {
+    const ann = state.annotations[idx];
+    if (!ann || !ann.hasPose) {
+      continue;
+    }
+    for (let k = 0; k < ann.keypoints.length; k += 1) {
+      const kp = ann.keypoints[k];
+      if (kp.v === 0) {
+        continue;
+      }
+      const kx = kp.x * state.imageWidth;
+      const ky = kp.y * state.imageHeight;
+      const dist = Math.hypot(worldX - kx, worldY - ky);
+      if (dist <= radius) {
+        return { objectIndex: idx, keypointIndex: k };
+      }
+    }
+  }
+  return null;
+}
+
+function pickCorner(worldX, worldY, scale) {
+  const radius = pickThreshold(scale);
+  const order = buildPickOrder();
+  for (const idx of order) {
+    const ann = state.annotations[idx];
+    if (!ann) {
+      continue;
+    }
+    const corners = bboxCorners(ann.bbox);
+    for (const corner of ["tl", "tr", "bl", "br"]) {
+      const cornerPos = corners[corner];
+      const dist = Math.hypot(worldX - cornerPos.x, worldY - cornerPos.y);
+      if (dist <= radius) {
+        return { objectIndex: idx, corner, corners };
+      }
+    }
+  }
+  return null;
+}
+
+function pickBBox(worldX, worldY) {
+  const order = buildPickOrder();
+  for (const idx of order) {
+    const ann = state.annotations[idx];
+    if (!ann) {
+      continue;
+    }
+    const { x, y, w, h } = bboxToPixels(ann.bbox);
+    if (worldX >= x && worldX <= x + w && worldY >= y && worldY <= y + h) {
+      return { objectIndex: idx };
+    }
+  }
+  return null;
 }
 
 init();

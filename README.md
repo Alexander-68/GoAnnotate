@@ -15,6 +15,7 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.     
 - Show keypoint names with visibility (e.g., `left ear:1`) on hover.
+- Show a cursor-centered magnifier window on left click or tap for precise inspection and editing.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
@@ -43,9 +44,9 @@ Keyboard
 - `+` / `-`: Change the selected keypoint name (available names only), or change the selected object class ID when no keypoint is selected.
 
 Mouse
-- Left click: Select keypoint (priority) or bounding box.
-- Left drag: Move the selected keypoint.
-- Left drag on empty space or bbox: Pan the view (when not dragging a keypoint or bbox corner).
+- Left click: Select keypoint (priority) or bounding box (shows magnifier).
+- Left drag: Move the selected keypoint (shows magnifier).
+- Left drag on empty space or bbox: Pan the view (shows magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object (auto-selects an unused name).
@@ -56,10 +57,10 @@ Mouse
 Touch
 - Swipe right: Previous image (saves current labels before switching).
 - Swipe left: Next image (saves current labels before switching).
-- Tap a bounding box: Select the object (tap empty space to clear selection).
-- Drag a keypoint: Move the selected keypoint.
+- Tap a bounding box: Select the object (shows magnifier).
+- Drag a keypoint: Move the selected keypoint (shows magnifier).
 - Drag a bounding box corner: Resize the bounding box.
-- One-finger drag: Pan the view.
+- One-finger drag: Pan the view (shows magnifier).
 - Pinch: Zoom in or out (centered on the pinch midpoint).
 
 UI

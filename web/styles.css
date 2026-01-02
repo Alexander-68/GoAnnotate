@@ -50,7 +50,7 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: 15px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
@@ -63,7 +63,7 @@ body::before {
   border: 1px solid var(--panel-border);
   background: rgba(255, 255, 255, 0.9);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 16.25px;
   color: var(--ink);
 }
 
@@ -126,19 +126,27 @@ body::before {
   border-radius: 10px;
   border: 1px solid var(--panel-border);
   background: rgba(255, 255, 255, 0.86);
-  font-size: 12px;
+  font-size: 15px;
   letter-spacing: 0.02em;
   white-space: pre;
   pointer-events: none;
 }
 
-.corner-btn {
+.corner-actions {
   position: absolute;
   top: 14px;
   right: 14px;
   z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.corner-actions .btn {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(6px);
+  width: 100%;
 }
 
 .modal {
@@ -163,12 +171,15 @@ body::before {
 .modal-card {
   position: relative;
   width: min(780px, 92vw);
+  max-height: 90vh;
   background: #fff;
   border-radius: 16px;
   padding: 18px 20px 20px;
   box-shadow: var(--shadow);
   border: 1px solid rgba(29, 28, 26, 0.12);
   animation: fadeIn 0.25s ease-out;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
@@ -176,10 +187,11 @@ body::before {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .modal-title {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -207,17 +219,23 @@ body::before {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
+  overflow-y: auto;
+}
+
+.scrollable-content {
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .modal-desc {
   margin: 0;
-  font-size: 13px;
+  font-size: 16.25px;
   color: var(--muted);
   line-height: 1.5;
 }
 
 .modal-section-title {
-  font-size: 12px;
+  font-size: 15px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -227,6 +245,10 @@ body::before {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.modal-card .btn:not(.btn-sm) {
+  font-size: 20px;
 }
 
 .field-with-btn {
@@ -241,7 +263,7 @@ body::before {
 
 .btn-sm {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 13.75px;
 }
 
 .folder-picker {
@@ -268,7 +290,7 @@ body::before {
 }
 
 .picker-path {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -287,7 +309,7 @@ body::before {
 }
 
 .picker-title {
-  font-size: 13px;
+  font-size: 16.25px;
   font-weight: 600;
   color: var(--ink);
   margin-bottom: 8px;
@@ -299,7 +321,7 @@ body::before {
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 16.25px;
   background: rgba(0, 0, 0, 0.03);
 }
 
@@ -314,7 +336,7 @@ body::before {
 
 .picker-meta {
   float: right;
-  font-size: 11px;
+  font-size: 13.75px;
   color: var(--muted);
   pointer-events: none;
 }
@@ -340,6 +362,9 @@ body::before {
   .field input {
     width: min(360px, 80vw);
   }
+  .keys-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field-header {
@@ -350,4 +375,49 @@ body::before {
 
 .full-width-input {
   width: 100%;
+}
+
+.keys-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+    font-size: 15px;
+    color: var(--ink);
+}
+.key-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: rgba(0,0,0,0.03);
+    border-radius: 6px;
+}
+.key-item span:first-child {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.magnifier {
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border: 3px solid var(--accent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.15s ease;
+}
+
+.magnifier.hidden {
+  opacity: 0;
+}
+
+.magnifier canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
