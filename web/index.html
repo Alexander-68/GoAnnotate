@@ -11,10 +11,44 @@
 <body>
   <div class="app">
     <main class="workspace">
-      <button id="openModalBtn" class="corner-btn btn ghost" type="button">Load</button>
+      <div class="corner-actions">
+        <button id="openModalBtn" class="btn ghost" type="button">Load</button>
+        <button id="openHelpBtn" class="btn ghost" type="button">Help</button>
+      </div>
       <div class="osd" id="osd"></div>
       <canvas id="canvas"></canvas>
     </main>
+  </div>
+  <div class="modal hidden" id="helpModal" aria-hidden="true">
+    <div class="modal-scrim" data-close="true"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="helpModalTitle">Help</h2>
+        <button class="modal-close" type="button" data-close="true">X</button>
+      </div>
+      <div class="modal-body scrollable-content">
+        <p class="modal-desc"><strong>GoAnnotate</strong><br>Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.</p>
+        
+        <div class="modal-section-title">Where to start</div>
+        <p class="modal-desc">Click the <strong>Load</strong> button (top-right) to select your Images and Labels directories.</p>
+        <p class="modal-desc">Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.</p>
+
+        <div class="modal-section-title">Keys & Controls</div>
+        <div class="keys-grid">
+            <div class="key-item"><span>A / D</span> <span>Prev / Next Image</span></div>
+            <div class="key-item"><span>Home / End</span> <span>First / Last Image</span></div>
+            <div class="key-item"><span>Esc / Ctrl+Z</span> <span>Undo</span></div>
+            <div class="key-item"><span>V</span> <span>Cycle Visibility</span></div>
+            <div class="key-item"><span>B</span> <span>Color Schemes</span></div>
+            <div class="key-item"><span>C / Z</span> <span>Next / Prev Object</span></div>
+            <div class="key-item"><span>X</span> <span>Unselect</span></div>
+            <div class="key-item"><span>Delete</span> <span>Delete Selection</span></div>
+            <div class="key-item"><span>+ / -</span> <span>Change Class / Name</span></div>
+            <div class="key-item"><span>Mouse Wheel</span> <span>Zoom</span></div>
+            <div class="key-item"><span>Right Drag</span> <span>Pan</span></div>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="modal hidden" id="loadModal" aria-hidden="true">
     <div class="modal-scrim" data-close="true"></div>

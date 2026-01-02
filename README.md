@@ -65,6 +65,8 @@ Touch
 UI
 - The app opens with the project popup visible on start.
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
+- The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
+- Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 
