@@ -30,6 +30,7 @@ const magnifierResizeHandle = document.getElementById("magnifierResize");
 const magnifierMinimizeBtn = document.getElementById("magnifierMinimize");
 const workspace = document.querySelector(".workspace");
 
+let loadRequestId = 0;
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
 let pickerSelectedPath = "";
@@ -260,7 +261,9 @@ const state = {
   modifiedSinceLoad: false,
   undoStack: [],
   osdCache: "",
-  statusText: "Idle"
+  statusText: "Idle",
+  cachedViewState: null,
+  cachedMagnifierState: null
 };
 
 const storageKey = {
@@ -698,6 +701,8 @@ async function loadImage(index, options = {}) {
   if (index < 0 || index >= state.images.length) {
     return;
   }
+  const currentRequestId = ++loadRequestId;
+
   const preserveView = options && options.preserveView;
   const preserveMagnifier = options && options.preserveMagnifier;
   const viewState = options && options.viewState;
@@ -725,13 +730,24 @@ async function loadImage(index, options = {}) {
       throw new Error("Unable to load image");
     }
     const blob = await imageResponse.blob();
-    state.imageBitmap = await createImageBitmap(blob);
+    const bitmap = await createImageBitmap(blob);
+
+    if (loadRequestId !== currentRequestId) {
+      return;
+    }
+
+    state.imageBitmap = bitmap;
     state.imageWidth = state.imageBitmap.width;
     state.imageHeight = state.imageBitmap.height;
 
     const labelName = `${stripExt(entry.name)}.txt`;
     const labelUrl = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
     const labelResponse = await fetch(labelUrl);
+    
+    if (loadRequestId !== currentRequestId) {
+      return;
+    }
+
     let labelText = "";
     if (labelResponse.ok) {
       labelText = await labelResponse.text();
@@ -786,10 +802,19 @@ async function loadImage(index, options = {}) {
       updateMagnifierMinimizeButton();
     }
     setStatus(`${entry.name} (${state.index + 1}/${state.images.length})`);
+    
+    // Update cached state on successful full load
+    state.cachedViewState = null;
+    state.cachedMagnifierState = null;
+
   } catch (error) {
-    setStatus(`Error: ${error.message}`);
+    if (loadRequestId === currentRequestId) {
+        setStatus(`Error: ${error.message}`);
+    }
   } finally {
-    updateImageNav();
+    if (loadRequestId === currentRequestId) {
+        updateImageNav();
+    }
   }
 }
 
@@ -2311,39 +2336,51 @@ async function changeImage(nextIndex) {
     }
   }
 
-  const oldW = state.imageWidth || 1;
-  const oldH = state.imageHeight || 1;
   const cvsW = state.canvasSize.width;
   const cvsH = state.canvasSize.height;
 
-  // View Center in World
-  const viewCx = (cvsW / 2 - state.view.offsetX) / state.view.scale;
-  const viewCy = (cvsH / 2 - state.view.offsetY) / state.view.scale;
+  let viewState = null;
+  let magnifierState = null;
 
-  const viewState = {
-    relX: viewCx / oldW,
-    relY: viewCy / oldH,
-    scale: state.view.scale,
-    offsetX: state.view.offsetX,
-    offsetY: state.view.offsetY
-  };
-  const magnifierState = {
-    active: state.magnifier.active,
-    relX: state.magnifier.x / oldW,
-    relY: state.magnifier.y / oldH,
-    x: state.magnifier.x,
-    y: state.magnifier.y,
-    scale: state.magnifier.scale,
-    screenX: state.magnifier.screenX,
-    screenY: state.magnifier.screenY,
-    width: state.magnifier.width,
-    height: state.magnifier.height,
-    minimized: state.magnifier.minimized,
-    restoreWidth: state.magnifier.restoreWidth,
-    restoreHeight: state.magnifier.restoreHeight,
-    restoreX: state.magnifier.restoreX,
-    restoreY: state.magnifier.restoreY
-  };
+  if (state.imageBitmap && state.imageWidth > 0 && state.imageHeight > 0) {
+    const oldW = state.imageWidth;
+    const oldH = state.imageHeight;
+
+    // View Center in World
+    const viewCx = (cvsW / 2 - state.view.offsetX) / state.view.scale;
+    const viewCy = (cvsH / 2 - state.view.offsetY) / state.view.scale;
+
+    viewState = {
+      relX: viewCx / oldW,
+      relY: viewCy / oldH,
+      scale: state.view.scale,
+      offsetX: state.view.offsetX,
+      offsetY: state.view.offsetY
+    };
+    magnifierState = {
+      active: state.magnifier.active,
+      relX: state.magnifier.x / oldW,
+      relY: state.magnifier.y / oldH,
+      x: state.magnifier.x,
+      y: state.magnifier.y,
+      scale: state.magnifier.scale,
+      screenX: state.magnifier.screenX,
+      screenY: state.magnifier.screenY,
+      width: state.magnifier.width,
+      height: state.magnifier.height,
+      minimized: state.magnifier.minimized,
+      restoreWidth: state.magnifier.restoreWidth,
+      restoreHeight: state.magnifier.restoreHeight,
+      restoreX: state.magnifier.restoreX,
+      restoreY: state.magnifier.restoreY
+    };
+    state.cachedViewState = viewState;
+    state.cachedMagnifierState = magnifierState;
+  } else {
+    viewState = state.cachedViewState;
+    magnifierState = state.cachedMagnifierState;
+  }
+
   await loadImage(nextIndex, {
     preserveView: true,
     preserveMagnifier: true,
