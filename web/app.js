@@ -2611,36 +2611,85 @@ function getVisibleIndices() {
   return indices;
 }
 
+function isValidKeypoint(kp) {
+  return kp && Number.isFinite(kp.x) && Number.isFinite(kp.y) && kp.v > 0;
+}
+
+function findNearestValidKeypointIndex(ann, preferredIndex) {
+  if (!ann || !ann.keypoints || preferredIndex < 0) {
+    return -1;
+  }
+  const keypoints = ann.keypoints;
+  const lastIdx = keypoints.length - 1;
+  if (preferredIndex <= lastIdx && isValidKeypoint(keypoints[preferredIndex])) {
+    return preferredIndex;
+  }
+  for (let i = Math.min(preferredIndex - 1, lastIdx); i >= 0; i -= 1) {
+    if (isValidKeypoint(keypoints[i])) {
+      return i;
+    }
+  }
+  for (let i = Math.max(preferredIndex + 1, 0); i <= lastIdx; i += 1) {
+    if (isValidKeypoint(keypoints[i])) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function centerMagnifierOnObject(ann) {
+  const fallbackX = state.imageWidth / 2;
+  const fallbackY = state.imageHeight / 2;
+  if (!ann || !ann.bbox) {
+    state.magnifier.x = fallbackX;
+    state.magnifier.y = fallbackY;
+    return;
+  }
+  const cx = Number.isFinite(ann.bbox.cx) ? ann.bbox.cx * state.imageWidth : fallbackX;
+  const cy = Number.isFinite(ann.bbox.cy) ? ann.bbox.cy * state.imageHeight : fallbackY;
+  state.magnifier.x = cx;
+  state.magnifier.y = cy;
+}
+
 function setSelection(objectIndex, keypointIndex, corner) {
   if (state.selection.objectIndex !== objectIndex) {
     // Auto-center magnifier when switching objects
     if (state.magnifier.active && state.selection.objectIndex >= 0 && objectIndex >= 0) {
       const oldObj = state.annotations[state.selection.objectIndex];
       const newObj = state.annotations[objectIndex];
-      if (oldObj && newObj && oldObj.keypoints && newObj.keypoints) {
+      if (oldObj && newObj) {
         let bestIdx = -1;
         let minD2 = Infinity;
         const mx = state.magnifier.x;
         const my = state.magnifier.y;
 
-        for (let i = 0; i < oldObj.keypoints.length; i++) {
-          const kp = oldObj.keypoints[i];
-          // Consider visible keypoints to find what we are looking at
-          if (kp.v > 0) {
-            const kx = kp.x * state.imageWidth;
-            const ky = kp.y * state.imageHeight;
-            const d2 = (kx - mx) ** 2 + (ky - my) ** 2;
-            if (d2 < minD2) {
-              minD2 = d2;
-              bestIdx = i;
+        if (oldObj.keypoints) {
+          for (let i = 0; i < oldObj.keypoints.length; i++) {
+            const kp = oldObj.keypoints[i];
+            // Consider visible keypoints to find what we are looking at
+            if (kp.v > 0) {
+              const kx = kp.x * state.imageWidth;
+              const ky = kp.y * state.imageHeight;
+              const d2 = (kx - mx) ** 2 + (ky - my) ** 2;
+              if (d2 < minD2) {
+                minD2 = d2;
+                bestIdx = i;
+              }
             }
           }
         }
 
-        if (bestIdx !== -1 && newObj.keypoints[bestIdx]) {
-          const targetKp = newObj.keypoints[bestIdx];
-          state.magnifier.x = targetKp.x * state.imageWidth;
-          state.magnifier.y = targetKp.y * state.imageHeight;
+        if (bestIdx !== -1 && newObj.keypoints) {
+          const targetIdx = findNearestValidKeypointIndex(newObj, bestIdx);
+          if (targetIdx !== -1) {
+            const targetKp = newObj.keypoints[targetIdx];
+            state.magnifier.x = targetKp.x * state.imageWidth;
+            state.magnifier.y = targetKp.y * state.imageHeight;
+          } else {
+            centerMagnifierOnObject(newObj);
+          }
+        } else {
+          centerMagnifierOnObject(newObj);
         }
       }
     }
