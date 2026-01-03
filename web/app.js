@@ -789,6 +789,17 @@ async function loadImage(index, options = {}) {
       state.magnifier.restoreY = magnifierState.restoreY;
       state.magnifier.drag.mode = null;
       state.magnifier.drag.pointerId = null;
+
+      // Auto-center magnifier on target keypoint if requested
+      if (magnifierState.targetKeypointIndex !== undefined && magnifierState.targetKeypointIndex !== -1) {
+         const targetObj = state.annotations.find(ann => ann.classId === 0);
+         if (targetObj && targetObj.keypoints && targetObj.keypoints[magnifierState.targetKeypointIndex]) {
+             const kp = targetObj.keypoints[magnifierState.targetKeypointIndex];
+             state.magnifier.x = kp.x * state.imageWidth;
+             state.magnifier.y = kp.y * state.imageHeight;
+         }
+      }
+
       updateMagnifierMinimizeButton();
     }
     setStatus(`${entry.name} (${state.index + 1}/${state.images.length})`);
@@ -2353,8 +2364,32 @@ async function changeImage(nextIndex) {
       restoreWidth: state.magnifier.restoreWidth,
       restoreHeight: state.magnifier.restoreHeight,
       restoreX: state.magnifier.restoreX,
-      restoreY: state.magnifier.restoreY
+      restoreY: state.magnifier.restoreY,
+      targetKeypointIndex: -1
     };
+
+    if (state.magnifier.active) {
+      let bestKpIdx = -1;
+      let minD2 = Infinity;
+      const mx = state.magnifier.x;
+      const my = state.magnifier.y;
+
+      state.annotations.forEach((ann) => {
+        ann.keypoints.forEach((kp, idx) => {
+          if (kp.v > 0) {
+            const kx = kp.x * state.imageWidth;
+            const ky = kp.y * state.imageHeight;
+            const d2 = (kx - mx) ** 2 + (ky - my) ** 2;
+            if (d2 < minD2) {
+              minD2 = d2;
+              bestKpIdx = idx;
+            }
+          }
+        });
+      });
+      magnifierState.targetKeypointIndex = bestKpIdx;
+    }
+
     state.cachedViewState = viewState;
     state.cachedMagnifierState = magnifierState;
   } else {
