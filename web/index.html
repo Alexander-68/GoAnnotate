@@ -40,6 +40,9 @@
         
         <div class="modal-section-title">Where to start</div>
         <p class="modal-desc">Click the <strong>Load</strong> button (top-right) to select your Images and Labels directories.</p>
+        <p class="modal-desc">Use the <strong>Browse</strong> buttons to open a folder picker overlay. It starts from the path already in each field and lets you confirm the selected folder.</p>
+        <p class="modal-desc">Labels auto-suggest matches `images_*` to `labels_*` and `image-*` to `label-*` when the paths follow that naming.</p>
+        <p class="modal-desc">If a selected folder has no images or labels, the Load flow asks whether to revise paths or continue with what was found.</p>
         <p class="modal-desc">Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.</p>
 
         <div class="modal-section-title">Keys & Controls</div>
@@ -93,8 +96,21 @@
           <datalist id="labelsDirList"></datalist>
         </div>
 
-        <div id="folderPicker" class="folder-picker hidden">
-          <div id="pickerTitle" class="picker-title"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="confirmLoadBtn" class="btn ghost" type="button">Load</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden folder-picker-modal" id="folderPickerModal" aria-hidden="true">
+    <div class="modal-scrim" data-close="true"></div>
+    <div class="modal-card picker-card" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="pickerTitle">Select Directory</h2>
+        <button class="modal-close" type="button" data-close="true">X</button>
+      </div>
+      <div class="modal-body">
+        <div id="folderPicker" class="folder-picker">
           <div class="picker-header">
             <button id="pickerBackBtn" class="btn ghost btn-sm" type="button">&larr; Up</button>
             <span id="pickerCurrentPath" class="picker-path"></span>
@@ -105,9 +121,6 @@
             <button id="pickerSelectBtn" class="btn ghost btn-sm" type="button">Select Current</button>
           </div>
         </div>
-      </div>
-      <div class="modal-actions">
-        <button id="confirmLoadBtn" class="btn ghost" type="button">Load</button>
       </div>
     </div>
   </div>

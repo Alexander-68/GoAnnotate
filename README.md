@@ -30,9 +30,11 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Log loaded dataset paths with total and labeled image counts on load.
 - Automatically suggest a Labels Directory when an Images Directory is selected in the UI, prioritized as follows:
     1.  YOLO-style: `.../labels/{subdir}` if images are in `.../images/{subdir}`.
-    2.  Subdirectory: `imagesDir/labels`.
-    3.  Sibling: `../labels`.
-    4.  Parent: `..`.
+    2.  Sibling: replace `images` -> `labels` or `image` -> `label` in the folder name (for example, `images_mosaics` -> `labels_mosaics`, `image-abc` -> `label-abc`).
+    3.  Subdirectory: `imagesDir/labels`.
+    4.  Sibling: `../labels`.
+    5.  Parent: `..`.
+- Prompt before loading when the selected folders contain no images or no label files.
 
 ## Interactions
 
@@ -78,6 +80,7 @@ Touch
 UI
 - The app opens with the project popup visible on start.
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
+- The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.

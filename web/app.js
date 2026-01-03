@@ -14,6 +14,7 @@ const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
 const browseLabelsBtn = document.getElementById("browseLabelsBtn");
 const folderPicker = document.getElementById("folderPicker");
+const folderPickerModal = document.getElementById("folderPickerModal");
 const pickerList = document.getElementById("pickerList");
 const pickerCurrentPath = document.getElementById("pickerCurrentPath");
 const pickerBackBtn = document.getElementById("pickerBackBtn");
@@ -399,6 +400,15 @@ function init() {
     }
   });
 
+  if (folderPickerModal) {
+    folderPickerModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.close) {
+        closePicker();
+      }
+    });
+  }
+
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("pointermove", onMagnifierDragMove);
@@ -452,14 +462,24 @@ async function openPicker(target, title) {
   if (pickerTitle) {
     pickerTitle.textContent = title || "Select Directory";
   }
-  folderPicker.classList.remove("hidden");
+  if (folderPickerModal) {
+    folderPickerModal.classList.remove("hidden");
+    folderPickerModal.setAttribute("aria-hidden", "false");
+  } else {
+    folderPicker.classList.remove("hidden");
+  }
   let startPath = target.value.trim();
   pickerSelectedPath = startPath;
   await navigatePicker(startPath);
 }
 
 function closePicker() {
-  folderPicker.classList.add("hidden");
+  if (folderPickerModal) {
+    folderPickerModal.classList.add("hidden");
+    folderPickerModal.setAttribute("aria-hidden", "true");
+  } else {
+    folderPicker.classList.add("hidden");
+  }
   pickerActiveTarget = null;
 }
 
@@ -648,14 +668,6 @@ async function openProject() {
       return;
     }
   }
-  closeModal();
-
-  state.imagesDir = imagesDir;
-  state.labelsDir = labelsDir;
-  localStorage.setItem(storageKey.imagesDir, imagesDir);
-  localStorage.setItem(storageKey.labelsDir, labelsDir);
-  updateDatalist(imagesDirList, addRecentItem(storageKey.imagesRecent, imagesDir));
-  updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
 
   setStatus("Loading image list...");
   try {
@@ -665,7 +677,36 @@ async function openProject() {
       throw new Error("Unable to list images");
     }
     const data = await response.json();
-    state.images = data.images || [];
+    const images = data.images || [];
+    const labelFiles = Number.isFinite(data.labelFiles)
+      ? data.labelFiles
+      : images.reduce((count, entry) => count + (entry.labelExists ? 1 : 0), 0);
+    const warnings = [];
+    if (images.length === 0) {
+      warnings.push("No images found in the Images Dir.");
+    }
+    if (labelFiles === 0) {
+      warnings.push("No label files found in the Labels Dir.");
+    }
+    if (warnings.length > 0) {
+      const message = `${warnings.join(" ")}\n\nSelect Cancel to change folders, or OK to load anyway.`;
+      const proceed = window.confirm(message);
+      if (!proceed) {
+        setStatus("Update directories and try again.");
+        return;
+      }
+    }
+
+    closeModal();
+
+    state.imagesDir = imagesDir;
+    state.labelsDir = labelsDir;
+    localStorage.setItem(storageKey.imagesDir, imagesDir);
+    localStorage.setItem(storageKey.labelsDir, labelsDir);
+    updateDatalist(imagesDirList, addRecentItem(storageKey.imagesRecent, imagesDir));
+    updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
+
+    state.images = images;
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
       state.imageBitmap = null;
@@ -1889,6 +1930,10 @@ function onTouchEnd(event) {
 
 function onKeyDown(event) {
   if (event.code === "Escape") {
+    if (folderPickerModal && !folderPickerModal.classList.contains("hidden")) {
+      closePicker();
+      return;
+    }
     if (!loadModal.classList.contains("hidden")) {
       closeModal();
       return;

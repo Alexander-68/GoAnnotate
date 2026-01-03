@@ -24,7 +24,8 @@ var webContent embed.FS
 var dataRoot string
 
 type listResponse struct {
-	Images []imageEntry `json:"images"`
+	Images     []imageEntry `json:"images"`
+	LabelFiles int          `json:"labelFiles"`
 }
 
 type browseResponse struct {
@@ -130,6 +131,21 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	labelFiles := 0
+	if labelsAbs != "" {
+		labelEntries, err := os.ReadDir(labelsAbs)
+		if err == nil {
+			for _, entry := range labelEntries {
+				if entry.IsDir() {
+					continue
+				}
+				if strings.HasSuffix(strings.ToLower(entry.Name()), ".txt") {
+					labelFiles++
+				}
+			}
+		}
+	}
+
 	var images []imageEntry
 	labeledCount := 0
 	for _, entry := range entries {
@@ -158,7 +174,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Loaded dataset imagesDir=%q labelsDir=%q images=%d labeled=%d",
 		imagesAbs, labelsAbs, len(images), labeledCount)
-	writeJSON(w, listResponse{Images: images})
+	writeJSON(w, listResponse{Images: images, LabelFiles: labelFiles})
 }
 
 func handleBrowse(w http.ResponseWriter, r *http.Request) {
@@ -280,27 +296,69 @@ func handleSuggestLabels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Check images/labels
+	// 2. Check sibling folder by replacing "images"/"image" in the name.
+	base := filepath.Base(absImages)
+	if replaced, ok := replaceInsensitive(base, "images", "labels"); ok {
+		trySibling := filepath.Join(parent, replaced)
+		if isDir(trySibling) {
+			writeJSON(w, map[string]string{"labelsDir": trySibling})
+			return
+		}
+	}
+	if replaced, ok := replaceInsensitive(base, "image", "label"); ok {
+		trySibling := filepath.Join(parent, replaced)
+		if isDir(trySibling) {
+			writeJSON(w, map[string]string{"labelsDir": trySibling})
+			return
+		}
+	}
+
+	// 3. Check images/labels
 	try1 := filepath.Join(absImages, "labels")
 	if isDir(try1) {
 		writeJSON(w, map[string]string{"labelsDir": try1})
 		return
 	}
 
-	// 3. Check ../labels
+	// 4. Check ../labels
 	try2 := filepath.Join(parent, "labels")
 	if isDir(try2) {
 		writeJSON(w, map[string]string{"labelsDir": try2})
 		return
 	}
 
-	// 4. Default to parent
+	// 5. Default to parent
 	writeJSON(w, map[string]string{"labelsDir": parent})
 }
 
 func isDir(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.IsDir()
+}
+
+func replaceInsensitive(value, old, new string) (string, bool) {
+	if old == "" {
+		return value, false
+	}
+	lower := strings.ToLower(value)
+	oldLower := strings.ToLower(old)
+	if !strings.Contains(lower, oldLower) {
+		return value, false
+	}
+	var b strings.Builder
+	i := 0
+	for {
+		idx := strings.Index(lower[i:], oldLower)
+		if idx < 0 {
+			b.WriteString(value[i:])
+			break
+		}
+		idx += i
+		b.WriteString(value[i:idx])
+		b.WriteString(new)
+		i = idx + len(old)
+	}
+	return b.String(), true
 }
 
 func handleImage(w http.ResponseWriter, r *http.Request) {
