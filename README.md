@@ -47,30 +47,30 @@ Keyboard
 - `+` / `E` / `-` / `Q`: Increment/decrement the selected keypoint name (available IDs only), or increment/decrement the selected object class ID when no keypoint is selected.
 
 Mouse
-- Left click: Select keypoint (opens magnifier) or bounding box (selection only).
-- Left drag: Move the selected keypoint (shows magnifier).
-- Left drag on empty space or bbox: Pan the view (shows magnifier).
+- Left click: Select keypoint (positions magnifier) or bounding box (selection only).
+- Left drag: Move the selected keypoint (positions magnifier).
+- Left drag on empty space or bbox: Pan the view (positions magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged).
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
-- Magnifier corners: Drag top-left to move, drag bottom-right to resize (free aspect), click top-right to minimize and click the minimized square to restore.
-- Double click: Center the magnifier on the cursor.
+- Magnifier corners: Drag top-left to move, drag bottom-right to resize (free aspect), click top-right to minimize and click the '+' to restore.
+- Double click: Center and unminimize the magnifier on the cursor.
 - Click or drag outside the image: No action.
 
 Touch
 - Swipe right: Previous image (saves current labels before switching, works outside the image too).
 - Swipe left: Next image (saves current labels before switching, works outside the image too).
 - Tap a bounding box: Select the object (selection only).
-- Tap a keypoint: Select it and open the magnifier.
-- Drag a keypoint: Move the selected keypoint (shows magnifier).
+- Tap a keypoint: Select it and position the magnifier (does not unminimize).
+- Drag a keypoint: Move the selected keypoint (positions magnifier).
 - Drag a bounding box corner: Resize the bounding box.
-- One-finger drag: Pan the view (shows magnifier).
+- One-finger drag: Pan the view (positions magnifier).
 - Pinch: Zoom in or out (centered on the pinch midpoint, only over the image).
 - Pinch inside the magnifier: Zoom the magnifier view.
-- Double tap: Center the magnifier on the tap.
+- Double tap: Center and unminimize the magnifier on the tap.
 - Touch outside the image: No action.
 
 UI
@@ -81,7 +81,7 @@ UI
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
-- Click the minimized magnifier (plus sign) to restore it after minimizing.
+- Click the '+' on a minimized magnifier to restore it.
 
 ## Run
 

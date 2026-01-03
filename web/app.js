@@ -391,16 +391,6 @@ function init() {
       setMagnifierMinimized(!state.magnifier.minimized);
     });
   }
-  if (magnifier) {
-    magnifier.addEventListener("click", (event) => {
-      if (!state.magnifier.minimized) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setMagnifierMinimized(false);
-    });
-  }
 
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
@@ -1289,9 +1279,6 @@ function onMouseDown(event) {
       state.dragging.startX = event.clientX;
       state.dragging.startY = event.clientY;
       state.magnifier.active = true;
-      if (state.magnifier.minimized) {
-        setMagnifierMinimized(false);
-      }
       if (!isMagnifier) {
         state.magnifier.x = worldX;
         state.magnifier.y = worldY;
@@ -1309,9 +1296,6 @@ function onMouseDown(event) {
     state.dragging.startX = event.clientX;
     state.dragging.startY = event.clientY;
     state.magnifier.active = true;
-    if (state.magnifier.minimized) {
-      setMagnifierMinimized(false);
-    }
     if (!isMagnifier) {
       state.magnifier.x = worldX;
       state.magnifier.y = worldY;
@@ -1623,9 +1607,6 @@ function onTouchStart(event) {
       state.touch.mode = "keypoint";
       state.touch.swipeEligible = false;
       state.magnifier.active = true;
-      if (state.magnifier.minimized) {
-        setMagnifierMinimized(false);
-      }
       if (!touch.isMagnifier) {
         state.magnifier.x = touch.worldX;
         state.magnifier.y = touch.worldY;
