@@ -1960,12 +1960,12 @@ function onKeyDown(event) {
 
   if (event.code === "KeyC" || event.code === "ArrowDown") {
     event.preventDefault();
-    selectNext();
+    selectNextObject();
   }
 
   if (event.code === "KeyZ" || event.code === "ArrowUp") {
     event.preventDefault();
-    selectPrev();
+    selectPrevObject();
   }
 
   if (event.code === "KeyX") {

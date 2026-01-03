@@ -43,7 +43,7 @@ Keyboard
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
 - `B`: Cycle annotation color schemes.
-- `Z` / `C` or `Up` / `Down Arrow`: Select previous / next object (if no keypoint selected) or previous / next keypoint (if keypoint selected).
+- `Z` / `C` or `Up` / `Down Arrow`: Select previous / next object.
 - `X`: Unselect keypoint (if selected) or unselect object (show all).
 - `Delete` / `F`: Remove the selected keypoint, or remove the selected object.
 - `+` / `E` / `-` / `Q`: Increment/decrement the selected keypoint name (available IDs only), or increment/decrement the selected object class ID when no keypoint is selected.
