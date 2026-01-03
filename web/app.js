@@ -2533,6 +2533,37 @@ function getVisibleIndices() {
 
 function setSelection(objectIndex, keypointIndex, corner) {
   if (state.selection.objectIndex !== objectIndex) {
+    // Auto-center magnifier when switching objects
+    if (state.magnifier.active && state.selection.objectIndex >= 0 && objectIndex >= 0) {
+      const oldObj = state.annotations[state.selection.objectIndex];
+      const newObj = state.annotations[objectIndex];
+      if (oldObj && newObj && oldObj.keypoints && newObj.keypoints) {
+        let bestIdx = -1;
+        let minD2 = Infinity;
+        const mx = state.magnifier.x;
+        const my = state.magnifier.y;
+
+        for (let i = 0; i < oldObj.keypoints.length; i++) {
+          const kp = oldObj.keypoints[i];
+          // Consider visible keypoints to find what we are looking at
+          if (kp.v > 0) {
+            const kx = kp.x * state.imageWidth;
+            const ky = kp.y * state.imageHeight;
+            const d2 = (kx - mx) ** 2 + (ky - my) ** 2;
+            if (d2 < minD2) {
+              minD2 = d2;
+              bestIdx = i;
+            }
+          }
+        }
+
+        if (bestIdx !== -1 && newObj.keypoints[bestIdx]) {
+          const targetKp = newObj.keypoints[bestIdx];
+          state.magnifier.x = targetKp.x * state.imageWidth;
+          state.magnifier.y = targetKp.y * state.imageHeight;
+        }
+      }
+    }
     state.lastSelectedKeypointIndex = -1;
   }
   state.selection.objectIndex = objectIndex;

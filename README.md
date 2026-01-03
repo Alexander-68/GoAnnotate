@@ -18,6 +18,7 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Show a cursor-centered magnifier window on keypoint selection or double-click/tap for precise inspection and editing.
 - Keep the magnifier window anchored on screen once opened so selections inside it do not reposition the view.
 - Move, resize, or minimize the magnifier window using its corner handles.
+- Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
