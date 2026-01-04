@@ -884,14 +884,23 @@ async function loadImage(index, options = {}) {
       state.magnifier.drag.mode = null;
       state.magnifier.drag.pointerId = null;
 
-      // Auto-center magnifier on target keypoint if requested
-      if (magnifierState.targetKeypointIndex !== undefined && magnifierState.targetKeypointIndex !== -1) {
-         const targetObj = state.annotations.find(ann => ann.classId === 0);
-         if (targetObj && targetObj.keypoints && targetObj.keypoints[magnifierState.targetKeypointIndex]) {
-             const kp = targetObj.keypoints[magnifierState.targetKeypointIndex];
-             state.magnifier.x = kp.x * state.imageWidth;
-             state.magnifier.y = kp.y * state.imageHeight;
-         }
+      // Auto-center magnifier on target keypoint with object-switch fallbacks.
+      if (state.magnifier.active
+        && magnifierState.targetKeypointIndex !== undefined) {
+        const targetObj = state.annotations.find((ann) => ann.classId === 0);
+        if (targetObj) {
+          const targetIdx = findNearestValidKeypointIndex(
+            targetObj,
+            magnifierState.targetKeypointIndex
+          );
+          if (targetIdx !== -1) {
+            const kp = targetObj.keypoints[targetIdx];
+            state.magnifier.x = kp.x * state.imageWidth;
+            state.magnifier.y = kp.y * state.imageHeight;
+          } else {
+            centerMagnifierOnObject(targetObj);
+          }
+        }
       }
 
       updateMagnifierMinimizeButton();
@@ -1541,13 +1550,7 @@ function onMouseMove(event) {
     bbox.cy = (minY + maxY) / 2;
     bbox.w = Math.max(0.0001, maxX - minX);
     bbox.h = Math.max(0.0001, maxY - minY);
-    
-    // Follow with magnifier if dragging on main
-    if (!isMagnifier) {
-      state.magnifier.x = worldX;
-      state.magnifier.y = worldY;
-    }
-    
+
     markDirty();
   }
 }
@@ -1840,7 +1843,7 @@ function onTouchMove(event) {
     }
 
     if (state.touch.mode === "bboxCorner") {
-      const annotation = state.annotations[state.selection.objectIndex];
+      const annotation = state.annotations[state.selection.objectIndex];        
       if (!annotation) {
         return;
       }
@@ -1861,10 +1864,6 @@ function onTouchMove(event) {
       bbox.cy = (minY + maxY) / 2;
       bbox.w = Math.max(0.0001, maxX - minX);
       bbox.h = Math.max(0.0001, maxY - minY);
-      if (!isMagnifier) {
-          state.magnifier.x = worldX;
-          state.magnifier.y = worldY;
-      }
       markDirty();
       return;
     }
