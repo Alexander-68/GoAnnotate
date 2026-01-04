@@ -51,6 +51,7 @@ Keyboard
 - `+` / `E` / `-` / `Q`: Increment/decrement the selected keypoint name (available IDs only), or increment/decrement the selected object class ID when no keypoint is selected.
 
 Mouse
+- Folder picker: Single click enters a folder; double click selects it.
 - Left click: Select keypoint (positions magnifier) or bounding box (selection only).
 - Left drag: Move the selected keypoint (positions magnifier).
 - Left drag on empty space or bbox: Pan the view (positions magnifier).
@@ -65,6 +66,7 @@ Mouse
 - Click or drag outside the image: No action.
 
 Touch
+- Folder picker: Single tap enters a folder; double tap selects it.
 - Swipe right: Previous image (saves current labels before switching, works outside the image too).
 - Swipe left: Next image (saves current labels before switching, works outside the image too).
 - Tap a bounding box: Select the object (selection only).
@@ -80,7 +82,7 @@ Touch
 UI
 - The app opens with the project popup visible on start.
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
-- The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; `Load` warns if no images or labels are found.
+- The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.

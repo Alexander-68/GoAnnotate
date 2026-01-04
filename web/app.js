@@ -315,15 +315,7 @@ function init() {
   });
 
   pickerSelectBtn.addEventListener("click", () => {
-    if (pickerActiveTarget) {
-      const val = pickerSelectedPath || pickerCurrentPathVal;
-      pickerActiveTarget.value = val;
-      if (pickerActiveTarget === imagesDirInput) {
-        checkLabelsVisibility();
-        suggestLabels(val);
-      }
-    }
-    closePicker();
+    applyPickerSelection();
   });
 
   imagesDirInput.addEventListener("keydown", (event) => {
@@ -473,6 +465,19 @@ async function openPicker(target, title) {
   await navigatePicker(startPath);
 }
 
+function applyPickerSelection(overridePath) {
+  if (!pickerActiveTarget) {
+    return;
+  }
+  const val = overridePath || pickerSelectedPath || pickerCurrentPathVal;
+  pickerActiveTarget.value = val;
+  if (pickerActiveTarget === imagesDirInput) {
+    checkLabelsVisibility();
+    suggestLabels(val);
+  }
+  closePicker();
+}
+
 function closePicker() {
   if (folderPickerModal) {
     folderPickerModal.classList.add("hidden");
@@ -580,19 +585,67 @@ function updatePickerUI(data) {
     item.textContent = dir.name;
     item.appendChild(meta);
 
+    let clickTimer = null;
+    let lastTapTime = 0;
+    let suppressClick = false;
+    const selectFolder = () => {
+      pickerSelectedPath = fullPath;
+      // Update UI highlights
+      Array.from(pickerList.children).forEach(c => c.classList.remove("selected"));
+      item.classList.add("selected");
+      updateSelectBtnText();
+    };
+    const commitSelection = () => {
+      selectFolder();
+      applyPickerSelection(fullPath);
+    };
+
     item.addEventListener("click", () => {
-      if (dir.hasSubdirs) {
-        navigatePicker(fullPath);
-      } else {
-        // Select this folder without entering
-        pickerSelectedPath = fullPath;
-        // Update UI highlights
-        Array.from(pickerList.children).forEach(c => c.classList.remove("selected"));
-        item.classList.add("selected");
-        updateSelectBtnText();
+      if (suppressClick) {
+        suppressClick = false;
+        return;
       }
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+      }
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        if (dir.hasSubdirs) {
+          navigatePicker(fullPath);
+        } else {
+          // Select this folder without entering
+          selectFolder();
+        }
+      }, 240);
     });
-    
+
+    item.addEventListener("dblclick", (event) => {
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+      }
+      event.preventDefault();
+      commitSelection();
+    });
+
+    item.addEventListener("pointerup", (event) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      const now = performance.now();
+      if (now - lastTapTime < 300) {
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        suppressClick = true;
+        commitSelection();
+        lastTapTime = 0;
+        return;
+      }
+      lastTapTime = now;
+    });
+
     pickerList.appendChild(item);
   });
 
