@@ -43,7 +43,7 @@ GoAnnotate auto-detects the pose format by counting keypoint triplets in each la
 
 - YOLO11 pose (17 keypoints): standard COCO order and skeleton.
 - MPII pose (16 keypoints): 0 right ankle, 1 right knee, 2 right hip, 3 left hip, 4 left knee, 5 left ankle, 6 pelvis, 7 thorax, 8 upper neck, 9 head top, 10 right wrist, 11 right elbow, 12 right shoulder, 13 left shoulder, 14 left elbow, 15 left wrist.
-- MPII skeleton draws head top -> upper neck -> thorax -> pelvis plus the YOLO-style limb connections.
+- MPII skeleton connects right ankle -> right knee -> right hip -> pelvis -> left hip -> left knee -> left ankle, pelvis -> thorax, thorax -> shoulders -> elbows -> wrists, and thorax -> upper neck -> head top.
 
 ## Interactions
 
