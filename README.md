@@ -1,10 +1,10 @@
 # GoAnnotate
 
-Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.
+Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.
 
 ## Description
 
-GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 detection/pose annotations. The backend serves the embedded frontend and reads/writes label files on disk while the frontend handles high-frequency rendering, zoom/pan, and annotation edits.
+GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 detection/pose annotations and MPII pose annotations. The backend serves the embedded frontend and reads/writes label files on disk while the frontend handles high-frequency rendering, zoom/pan, and annotation edits. Pose formats are inferred from keypoint triplet counts in each label line (17 for YOLO11, 16 for MPII).
 
 ## Functions
 
@@ -14,13 +14,14 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.     
-- Show keypoint names with visibility (e.g., `left ear:1`) on hover.
+- Show keypoint names with visibility (e.g., `left ear:1` or `right ankle:1`) on hover.
 - Show a cursor-centered magnifier window on keypoint selection or double-click/tap for precise inspection and editing.
 - Keep the magnifier window anchored on screen once opened so selections inside it do not reposition the view.
 - Move, resize, or minimize the magnifier window using its corner handles.
 - Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Automatically center the magnifier on the corresponding keypoint of the first person (class 0) when switching images; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
+- Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
@@ -35,6 +36,14 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
     4.  Sibling: `../labels`.
     5.  Parent: `..`.
 - Prompt before loading when the selected folders contain no images or no label files.
+
+## Annotation Formats
+
+GoAnnotate auto-detects the pose format by counting keypoint triplets in each label line.
+
+- YOLO11 pose (17 keypoints): standard COCO order and skeleton.
+- MPII pose (16 keypoints): 0 right ankle, 1 right knee, 2 right hip, 3 left hip, 4 left knee, 5 left ankle, 6 pelvis, 7 thorax, 8 upper neck, 9 head top, 10 right wrist, 11 right elbow, 12 right shoulder, 13 left shoulder, 14 left elbow, 15 left wrist.
+- MPII skeleton draws head top -> upper neck -> thorax -> pelvis plus the YOLO-style limb connections.
 
 ## Interactions
 

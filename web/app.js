@@ -39,34 +39,69 @@ let pickerSelectedPath = "";
 const MAX_RECENTS = 10;
 const MAX_UNDO = 50;
 
-const KPT_COUNT = (typeof Labels !== "undefined" && Number.isFinite(Labels.KPT_COUNT))
-  ? Labels.KPT_COUNT
+const DEFAULT_KPT_COUNT = (typeof Labels !== "undefined" && Number.isFinite(Labels.DEFAULT_KPT_COUNT))
+  ? Labels.DEFAULT_KPT_COUNT
   : 17;
-const KEYPOINT_NAMES = [
-  "nose",
-  "left eye",
-  "right eye",
-  "left ear",
-  "right ear",
-  "left shoulder",
-  "right shoulder",
-  "left elbow",
-  "right elbow",
-  "left wrist",
-  "right wrist",
-  "left hip",
-  "right hip",
-  "left knee",
-  "right knee",
-  "left ankle",
-  "right ankle"
-];
-const SKELETON = [
-  [0, 1], [0, 2], [1, 3], [2, 4],
-  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
-  [5, 11], [6, 12], [11, 12],
-  [11, 13], [13, 15], [12, 14], [14, 16]
-];
+const POSE_FORMATS = {
+  yolo11_pose: {
+    label: "yolo11-pose",
+    count: 17,
+    keypointNames: [
+      "nose",
+      "left eye",
+      "right eye",
+      "left ear",
+      "right ear",
+      "left shoulder",
+      "right shoulder",
+      "left elbow",
+      "right elbow",
+      "left wrist",
+      "right wrist",
+      "left hip",
+      "right hip",
+      "left knee",
+      "right knee",
+      "left ankle",
+      "right ankle"
+    ],
+    skeleton: [
+      [0, 1], [0, 2], [1, 3], [2, 4],
+      [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+      [5, 11], [6, 12], [11, 12],
+      [11, 13], [13, 15], [12, 14], [14, 16]
+    ]
+  },
+  mpii_pose: {
+    label: "mpii_pose",
+    count: 16,
+    keypointNames: [
+      "right ankle",
+      "right knee",
+      "right hip",
+      "left hip",
+      "left knee",
+      "left ankle",
+      "pelvis",
+      "thorax",
+      "upper neck",
+      "head top",
+      "right wrist",
+      "right elbow",
+      "right shoulder",
+      "left shoulder",
+      "left elbow",
+      "left wrist"
+    ],
+    skeleton: [
+      [9, 8], [8, 7], [7, 6],
+      [12, 13], [12, 11], [11, 10], [13, 14], [14, 15],
+      [12, 2], [13, 3], [2, 3],
+      [2, 1], [1, 0], [3, 4], [4, 5]
+    ]
+  }
+};
+const DEFAULT_POSE_FORMAT = "yolo11_pose";
 
 const COLOR_SCHEMES = [
   {
@@ -179,6 +214,7 @@ const state = {
   },
   lastClassId: 0,
   lastSelectedKeypointIndex: -1,
+  keypointCount: DEFAULT_KPT_COUNT,
   colorSchemeIndex: 0,
   lastMouse: {
     screenX: null,
@@ -760,6 +796,7 @@ async function openProject() {
     updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
 
     state.images = images;
+    state.keypointCount = DEFAULT_KPT_COUNT;
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
       state.imageBitmap = null;
@@ -837,6 +874,7 @@ async function loadImage(index, options = {}) {
       labelText = await labelResponse.text();
     }
     state.annotations = parseLabels(labelText);
+    state.keypointCount = inferKeypointCount(state.annotations, state.keypointCount);
     state.baseAnnotations = cloneAnnotations(state.annotations);
     if (preserveView && viewState) {
       if (Number.isFinite(viewState.relX)
@@ -944,9 +982,59 @@ function parseLabels(text) {
   return Labels.parseLabels(text);
 }
 
-function createEmptyKeypoints() {
+function getPoseFormatByCount(count) {
+  if (count === POSE_FORMATS.mpii_pose.count) {
+    return POSE_FORMATS.mpii_pose;
+  }
+  return POSE_FORMATS[DEFAULT_POSE_FORMAT];
+}
+
+function inferKeypointCount(annotations, fallbackCount) {
+  const fallback = Number.isFinite(fallbackCount) ? fallbackCount : DEFAULT_KPT_COUNT;
+  let seenMpii = false;
+  for (const ann of annotations) {
+    if (!ann || !Array.isArray(ann.keypoints)) {
+      continue;
+    }
+    const count = ann.keypoints.length;
+    if (count === POSE_FORMATS.yolo11_pose.count) {
+      return count;
+    }
+    if (count === POSE_FORMATS.mpii_pose.count) {
+      seenMpii = true;
+    }
+  }
+  return seenMpii ? POSE_FORMATS.mpii_pose.count : fallback;
+}
+
+function getAnnotationKeypointCount(annotation) {
+  if (!annotation || !Array.isArray(annotation.keypoints)) {
+    return state.keypointCount;
+  }
+  const count = annotation.keypoints.length;
+  if (annotation.hasPose && (count === POSE_FORMATS.yolo11_pose.count || count === POSE_FORMATS.mpii_pose.count)) {
+    return count;
+  }
+  return state.keypointCount;
+}
+
+function getPoseFormatForAnnotation(annotation) {
+  return getPoseFormatByCount(getAnnotationKeypointCount(annotation));
+}
+
+function getKeypointName(annotation, index) {
+  const names = getPoseFormatForAnnotation(annotation).keypointNames;
+  return names[index] || `kp ${index + 1}`;
+}
+
+function getSkeletonForAnnotation(annotation) {
+  return getPoseFormatForAnnotation(annotation).skeleton;
+}
+
+function createEmptyKeypoints(count = state.keypointCount) {
   const points = [];
-  for (let i = 0; i < KPT_COUNT; i += 1) {
+  const total = Number.isFinite(count) ? count : DEFAULT_KPT_COUNT;
+  for (let i = 0; i < total; i += 1) {
     points.push({ x: 0, y: 0, v: 0 });
   }
   return points;
@@ -1096,7 +1184,8 @@ function drawSkeleton(ctx, scale, annotation, isActive) {
   const scheme = getColorScheme();
   ctx.strokeStyle = isActive ? scheme.skeleton.active : scheme.skeleton.inactive;
   ctx.lineWidth = toWorldSize(isActive ? 2 : 1, scale);
-  for (const [a, b] of SKELETON) {
+  const skeleton = getSkeletonForAnnotation(annotation);
+  for (const [a, b] of skeleton) {
     const kpA = annotation.keypoints[a];
     const kpB = annotation.keypoints[b];
     if (!kpA || !kpB || kpA.v === 0 || kpB.v === 0) {
@@ -1160,7 +1249,7 @@ function drawHoverLabel() {
   const annotation = state.annotations[objectIndex];
   const kp = annotation ? annotation.keypoints[keypointIndex] : null;
   const visibility = kp ? clampVisibility(kp.v) : 0;
-  const name = KEYPOINT_NAMES[keypointIndex] || `kp ${keypointIndex + 1}`;
+  const name = getKeypointName(annotation, keypointIndex);
   const label = `${name}:${visibility}`;
   const { dpr, width, height } = state.canvasSize;
   ctx.save();
@@ -1276,7 +1365,7 @@ function buildSelectedLines() {
     if (state.selection.keypointIndex >= 0) {
       const kp = obj.keypoints[state.selection.keypointIndex];
       const visibility = kp ? clampVisibility(kp.v) : 0;
-      const name = KEYPOINT_NAMES[state.selection.keypointIndex] || `kp ${state.selection.keypointIndex + 1}`;
+      const name = getKeypointName(obj, state.selection.keypointIndex);
       lines.push(`${name}:${visibility}`);
     }
   }
@@ -2162,19 +2251,21 @@ function ensureKeypoints(annotation) {
   if (!annotation.keypoints) {
     annotation.keypoints = [];
   }
-  for (let i = annotation.keypoints.length; i < KPT_COUNT; i += 1) {
+  const count = getAnnotationKeypointCount(annotation);
+  for (let i = annotation.keypoints.length; i < count; i += 1) {
     annotation.keypoints.push({ x: 0, y: 0, v: 0 });
   }
-  if (annotation.keypoints.length > KPT_COUNT) {
-    annotation.keypoints.length = KPT_COUNT;
+  if (annotation.keypoints.length > count) {
+    annotation.keypoints.length = count;
   }
 }
 
 function findFirstAvailableKeypointIndex(annotation) {
   ensureKeypoints(annotation);
-  
+  const count = getAnnotationKeypointCount(annotation);
+
   if (state.lastSelectedKeypointIndex >= 0) {
-    for (let i = state.lastSelectedKeypointIndex + 1; i < KPT_COUNT; i++) {
+    for (let i = state.lastSelectedKeypointIndex + 1; i < count; i++) {
       const kp = annotation.keypoints[i];
       if (kp && kp.v === 0) {
         return i;
@@ -2182,7 +2273,7 @@ function findFirstAvailableKeypointIndex(annotation) {
     }
   }
 
-  for (let i = 0; i < KPT_COUNT; i += 1) {
+  for (let i = 0; i < count; i += 1) {
     const kp = annotation.keypoints[i];
     if (kp && kp.v === 0) {
       return i;
@@ -2193,8 +2284,9 @@ function findFirstAvailableKeypointIndex(annotation) {
 
 function findNextAvailableKeypointIndex(annotation, currentIndex, step) {
   ensureKeypoints(annotation);
-  for (let offset = 1; offset <= KPT_COUNT; offset += 1) {
-    const idx = (currentIndex + step * offset + KPT_COUNT) % KPT_COUNT;
+  const count = getAnnotationKeypointCount(annotation);
+  for (let offset = 1; offset <= count; offset += 1) {
+    const idx = (currentIndex + step * offset + count) % count;
     const kp = annotation.keypoints[idx];
     if (kp && kp.v === 0) {
       return idx;

@@ -36,7 +36,7 @@
         <button class="modal-close" type="button" data-close="true">X</button>
       </div>
       <div class="modal-body scrollable-content">
-        <p class="modal-desc"><strong>GoAnnotate</strong><br>Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.</p>
+        <p class="modal-desc"><strong>GoAnnotate</strong><br>Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.</p>
         
         <div class="modal-section-title">Getting Started</div>
         <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
@@ -44,6 +44,13 @@
           <li>Use <strong>Browse</strong> to pick folders. Single-click enters, double-click selects.</li>
           <li>Labels are auto-matched if naming follows `images` / `labels` convention.</li>
           <li>Changes save automatically on image switch. Undo available for unsaved changes.</li>
+        </ul>
+
+        <div class="modal-section-title">Pose Formats</div>
+        <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
+          <li>YOLO11 pose: 17 keypoints.</li>
+          <li>MPII pose: 16 keypoints with a head top -> upper neck -> thorax -> pelvis spine.</li>
+          <li>Format is auto-detected per label line by keypoint triplet count.</li>
         </ul>
 
         <div class="modal-section-title">Navigation</div>
@@ -78,7 +85,7 @@
             <div class="key-item"><span>Click</span> <span>Minimize (Top-Right)</span></div>
         </div>
         <p class="modal-desc" style="font-size: 14px; margin-top: 4px;">
-            <strong>Auto-Follow:</strong> Centers on Keypoint 0. If missing, uses nearest valid keypoint or object center.
+            <strong>Auto-Follow:</strong> Centers on Keypoint 0 for the active pose format. If missing, uses nearest valid keypoint or object center.
         </p>
       </div>
     </div>
@@ -91,7 +98,7 @@
         <button class="modal-close" type="button" data-close="true">X</button>
       </div>
       <div class="modal-body">
-        <p class="modal-desc">Visualize and annotate YOLO11 detections and 17-keypoint pose labels directly against your local image set.</p>
+        <p class="modal-desc">Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.</p>
         <div class="modal-section-title">Project Paths</div>
         
         <div class="field">

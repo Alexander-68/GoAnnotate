@@ -5,7 +5,9 @@
     root.Labels = factory();
   }
 })(typeof self !== "undefined" ? self : this, function () {
-  const KPT_COUNT = 17;
+  const YOLO_KPT_COUNT = 17;
+  const MPII_KPT_COUNT = 16;
+  const DEFAULT_KPT_COUNT = YOLO_KPT_COUNT;
 
   function clamp(value, min, max) {
     if (Number.isNaN(value)) return min;
@@ -21,6 +23,24 @@
 
   function formatNum(value) {
     return Number(value).toFixed(6);
+  }
+
+  function detectKeypointCount(parts) {
+    const available = Math.floor((parts.length - 5) / 3);
+    if (available >= YOLO_KPT_COUNT) {
+      return YOLO_KPT_COUNT;
+    }
+    if (available >= MPII_KPT_COUNT) {
+      return MPII_KPT_COUNT;
+    }
+    return 0;
+  }
+
+  function normalizeKeypointCount(value) {
+    if (value === YOLO_KPT_COUNT || value === MPII_KPT_COUNT) {
+      return value;
+    }
+    return DEFAULT_KPT_COUNT;
   }
 
   function parseLabels(text) {
@@ -40,11 +60,9 @@
         h: clamp(parts[4] || 0, 0, 1)
       };
       const keypoints = [];
-      let hasPose = false;
-      if (parts.length >= 5 + 3) {
-        hasPose = true;
-      }
-      for (let i = 0; i < KPT_COUNT; i += 1) {
+      const keypointCount = detectKeypointCount(parts);
+      const hasPose = keypointCount > 0;
+      for (let i = 0; i < keypointCount; i += 1) {
         const base = 5 + i * 3;
         const x = clamp(parts[base] || 0, 0, 1);
         const y = clamp(parts[base + 1] || 0, 0, 1);
@@ -71,7 +89,8 @@
       ];
       if (ann && ann.hasPose) {
         const keypoints = Array.isArray(ann.keypoints) ? ann.keypoints : [];
-        for (let i = 0; i < KPT_COUNT; i += 1) {
+        const count = normalizeKeypointCount(keypoints.length);
+        for (let i = 0; i < count; i += 1) {
           const kp = keypoints[i] || { x: 0, y: 0, v: 0 };
           items.push(formatNum(kp.x), formatNum(kp.y), clampVisibility(kp.v));
         }
@@ -81,7 +100,10 @@
   }
 
   return {
-    KPT_COUNT,
+    KPT_COUNT: DEFAULT_KPT_COUNT,
+    DEFAULT_KPT_COUNT,
+    YOLO_KPT_COUNT,
+    MPII_KPT_COUNT,
     parseLabels,
     serializeLabels
   };
