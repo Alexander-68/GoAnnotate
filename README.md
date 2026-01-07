@@ -8,7 +8,7 @@ GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 
 
 ## Quick Start
 
-Download executable from Releases. No installation is required. Single file.
+Download executable from Releases. No installation is required. Single file. Try the dataset examples in `example_datasets`.
 
 ## Functions
 
