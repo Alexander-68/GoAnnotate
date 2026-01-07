@@ -6,6 +6,10 @@ Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-
 
 GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 detection/pose annotations and MPII pose annotations. The backend serves the embedded frontend and reads/writes label files on disk while the frontend handles high-frequency rendering, zoom/pan, and annotation edits. Pose formats are inferred from keypoint triplet counts in each label line (17 for YOLO11, 16 for MPII).
 
+## Quick Start
+
+Download executable from Releases. No installation is required. Single file.
+
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
