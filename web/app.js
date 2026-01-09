@@ -299,6 +299,8 @@ const state = {
   undoStack: [],
   osdCache: "",
   statusText: "Idle",
+  loadingImage: false,
+  pendingIndex: null,
   cachedViewState: null,
   cachedMagnifierState: null
 };
@@ -372,13 +374,13 @@ function init() {
 
   if (prevImageBtn) {
     prevImageBtn.addEventListener("click", () => {
-      changeImage(state.index - 1);
+      changeImage(getActiveIndex() - 1);
     });
   }
 
   if (nextImageBtn) {
     nextImageBtn.addEventListener("click", () => {
-      changeImage(state.index + 1);
+      changeImage(getActiveIndex() + 1);
     });
   }
 
@@ -799,6 +801,8 @@ async function openProject() {
     state.keypointCount = DEFAULT_KPT_COUNT;
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
+      state.loadingImage = false;
+      state.pendingIndex = null;
       state.imageBitmap = null;
       state.imageWidth = 0;
       state.imageHeight = 0;
@@ -829,18 +833,12 @@ async function loadImage(index, options = {}) {
   const viewState = options && options.viewState;
   const magnifierState = options && options.magnifierState;
   const entry = state.images[index];
-  state.index = index;
-  state.imageName = entry.name;
-  state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
-  state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
-  state.imageBitmap = null;
-  state.imageWidth = 0;
-  state.imageHeight = 0;
-  state.annotations = [];
-  state.baseAnnotations = [];
-  state.dirty = false;
-  state.modifiedSinceLoad = false;
-  state.undoStack = [];
+  state.loadingImage = true;
+  state.dragging.mode = null;
+  state.dragging.pendingSelection = null;
+  state.dragging.snapshotTaken = false;
+  state.touch.mode = null;
+  state.touch.swipeEligible = false;
 
   setStatus(`Loading ${entry.name}...`);
 
@@ -857,10 +855,6 @@ async function loadImage(index, options = {}) {
       return;
     }
 
-    state.imageBitmap = bitmap;
-    state.imageWidth = state.imageBitmap.width;
-    state.imageHeight = state.imageBitmap.height;
-
     const labelName = `${stripExt(entry.name)}.txt`;
     const labelUrl = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
     const labelResponse = await fetch(labelUrl);
@@ -873,9 +867,22 @@ async function loadImage(index, options = {}) {
     if (labelResponse.ok) {
       labelText = await labelResponse.text();
     }
-    state.annotations = parseLabels(labelText);
-    state.keypointCount = inferKeypointCount(state.annotations, state.keypointCount);
-    state.baseAnnotations = cloneAnnotations(state.annotations);
+    const annotations = parseLabels(labelText);
+    const keypointCount = inferKeypointCount(annotations, state.keypointCount);
+
+    state.index = index;
+    state.imageName = entry.name;
+    state.imageBitmap = bitmap;
+    state.imageWidth = bitmap.width;
+    state.imageHeight = bitmap.height;
+    state.annotations = annotations;
+    state.keypointCount = keypointCount;
+    state.baseAnnotations = cloneAnnotations(annotations);
+    state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
+    state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
+    state.dirty = false;
+    state.modifiedSinceLoad = false;
+    state.undoStack = [];
     if (preserveView && viewState) {
       if (Number.isFinite(viewState.relX)
         && Number.isFinite(viewState.relY)
@@ -955,6 +962,8 @@ async function loadImage(index, options = {}) {
     }
   } finally {
     if (loadRequestId === currentRequestId) {
+        state.loadingImage = false;
+        state.pendingIndex = null;
         updateImageNav();
     }
   }
@@ -1424,7 +1433,7 @@ function isWithinImage(worldX, worldY) {
 }
 
 function onMouseDown(event) {
-  if (!state.imageBitmap) {
+  if (!state.imageBitmap || state.loadingImage) {
     return;
   }
   
@@ -1535,7 +1544,7 @@ function onMouseDown(event) {
 }
 
 function onMouseMove(event) {
-  if (!state.imageBitmap) {
+  if (!state.imageBitmap || state.loadingImage) {
     return;
   }
   
@@ -1645,7 +1654,7 @@ function onMouseMove(event) {
 }
 
 function onDoubleClick(event) {
-  if (!state.imageBitmap) {
+  if (!state.imageBitmap || state.loadingImage) {
     return;
   }
   if (event.target === magnifierCanvas) {
@@ -1690,7 +1699,7 @@ function onMouseUp(event) {
 }
 
 function onWheel(event) {
-  if (!state.imageBitmap) {
+  if (!state.imageBitmap || state.loadingImage) {
     return;
   }
   event.preventDefault();
@@ -1738,7 +1747,7 @@ function onWheel(event) {
 }
 
 function onTouchStart(event) {
-  if (!state.imageBitmap) {
+  if (!state.imageBitmap || state.loadingImage) {
     return;
   }
   event.preventDefault();
@@ -1862,7 +1871,7 @@ function onTouchStart(event) {
 }
 
 function onTouchMove(event) {
-  if (!state.imageBitmap || !state.touch.mode) {
+  if (!state.imageBitmap || state.loadingImage || !state.touch.mode) {
     return;
   }
   event.preventDefault();
@@ -1997,7 +2006,7 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
-  if (!state.imageBitmap || !state.touch.mode) {
+  if (!state.imageBitmap || state.loadingImage || !state.touch.mode) {
     state.magnifierActive = false;
     return;
   }
@@ -2056,9 +2065,9 @@ function onTouchEnd(event) {
       && Math.abs(dx) >= TOUCH_SWIPE_THRESHOLD
       && Math.abs(dx) >= Math.abs(dy) * TOUCH_SWIPE_AXIS_RATIO) {
       if (dx > 0) {
-        changeImage(state.index - 1);
+        changeImage(getActiveIndex() - 1);
       } else {
-        changeImage(state.index + 1);
+        changeImage(getActiveIndex() + 1);
       }
     }
   }
@@ -2107,12 +2116,12 @@ function onKeyDown(event) {
 
   if (event.code === "KeyA" || event.code === "ArrowLeft") {
     event.preventDefault();
-    changeImage(state.index - 1);
+    changeImage(getActiveIndex() - 1);
   }
 
   if (event.code === "KeyD" || event.code === "ArrowRight") {
     event.preventDefault();
-    changeImage(state.index + 1);
+    changeImage(getActiveIndex() + 1);
   }
 
   if (event.code === "Home") {
@@ -2127,12 +2136,12 @@ function onKeyDown(event) {
 
   if (event.code === "PageUp") {
     event.preventDefault();
-    changeImage(state.index - 100);
+    changeImage(getActiveIndex() - 100);
   }
 
   if (event.code === "PageDown") {
     event.preventDefault();
-    changeImage(state.index + 100);
+    changeImage(getActiveIndex() + 100);
   }
 
   if (event.code === "KeyV") {
@@ -2506,6 +2515,10 @@ function bboxEqual(a, b) {
   return a.cx === b.cx && a.cy === b.cy && a.w === b.w && a.h === b.h;
 }
 
+function getActiveIndex() {
+  return Number.isFinite(state.pendingIndex) ? state.pendingIndex : state.index;
+}
+
 async function changeImage(nextIndex) {
   if (nextIndex < 0 || nextIndex >= state.images.length) {
     return;
@@ -2586,6 +2599,7 @@ async function changeImage(nextIndex) {
     magnifierState = state.cachedMagnifierState;
   }
 
+  state.pendingIndex = nextIndex;
   await loadImage(nextIndex, {
     preserveView: true,
     preserveMagnifier: true,

@@ -31,6 +31,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Allow undo per image and clear undo history when switching images.
 - Preserve the current pan/zoom and magnifier state when switching images.
+- Keep the previous frame visible while loading the next image to avoid blank flashes during navigation.
 - Use a full-screen canvas with overlay OSD, top-right Load/Help buttons, and bottom-left Prev / bottom-right Next buttons for image navigation.
 - Log loaded dataset paths with total and labeled image counts on load.
 - Automatically suggest a Labels Directory when an Images Directory is selected in the UI, prioritized as follows:
