@@ -101,6 +101,7 @@ UI
 - The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
+- The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`).
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.

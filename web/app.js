@@ -7,6 +7,7 @@ const labelsDirList = document.getElementById("labelsDirList");
 const openModalBtn = document.getElementById("openModalBtn");
 const openHelpBtn = document.getElementById("openHelpBtn");
 const deleteBtn = document.getElementById("deleteBtn");
+const undoBtn = document.getElementById("undoBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
@@ -342,6 +343,11 @@ function init() {
   if (deleteBtn) {
     deleteBtn.addEventListener("click", () => {
       handleDeleteRequest();
+    });
+  }
+  if (undoBtn) {
+    undoBtn.addEventListener("click", () => {
+      undo();
     });
   }
 
