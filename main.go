@@ -52,6 +52,17 @@ type labelPayload struct {
 	Content   string `json:"content"`
 }
 
+type deletePayload struct {
+	ImagesDir string `json:"imagesDir"`
+	LabelsDir string `json:"labelsDir"`
+	File      string `json:"file"`
+}
+
+type deleteResponse struct {
+	DeletedImage bool `json:"deletedImage"`
+	DeletedLabel bool `json:"deletedLabel"`
+}
+
 func main() {
 	ip := flag.String("ip", "127.0.0.1", "IP address to listen on")
 	port := flag.Int("port", 8080, "Port to listen on")
@@ -73,6 +84,7 @@ func main() {
 	mux.HandleFunc("GET /api/image", handleImage)
 	mux.HandleFunc("GET /api/labels", handleLabelsGet)
 	mux.HandleFunc("POST /api/labels", handleLabelsPost)
+	mux.HandleFunc("POST /api/delete_image", handleDeleteImage)
 	mux.HandleFunc("GET /api/browse", handleBrowse)
 	mux.HandleFunc("GET /api/suggest_labels", handleSuggestLabels)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -451,6 +463,67 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("Updated %s", payload.File)
 	w.WriteHeader(http.StatusOK)
+}
+
+func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	defer body.Close()
+	payloadBytes, err := io.ReadAll(body)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	var payload deletePayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	payload.ImagesDir = strings.TrimSpace(payload.ImagesDir)
+	payload.LabelsDir = strings.TrimSpace(payload.LabelsDir)
+	payload.File = strings.TrimSpace(payload.File)
+	if payload.ImagesDir == "" || payload.File == "" {
+		http.Error(w, "imagesDir and file are required", http.StatusBadRequest)
+		return
+	}
+	imagePath, err := safeJoin(payload.ImagesDir, payload.File)
+	if err != nil {
+		http.Error(w, "invalid image path", http.StatusBadRequest)
+		return
+	}
+	if !isImageExt(strings.ToLower(filepath.Ext(imagePath))) {
+		http.Error(w, "unsupported image type", http.StatusBadRequest)
+		return
+	}
+
+	result := deleteResponse{}
+	if err := os.Remove(imagePath); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "unable to delete image", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		result.DeletedImage = true
+	}
+
+	if payload.LabelsDir != "" {
+		labelName := trimExt(payload.File) + ".txt"
+		labelPath, err := safeJoin(payload.LabelsDir, labelName)
+		if err != nil {
+			http.Error(w, "invalid label path", http.StatusBadRequest)
+			return
+		}
+		if err := os.Remove(labelPath); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				http.Error(w, "unable to delete label", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			result.DeletedLabel = true
+		}
+	}
+
+	log.Printf("Deleted image=%q label=%t", payload.File, result.DeletedLabel)
+	writeJSON(w, result)
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {

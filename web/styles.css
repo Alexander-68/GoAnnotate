@@ -274,6 +274,8 @@ body::before {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .modal-card .btn:not(.btn-sm) {

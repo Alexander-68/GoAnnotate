@@ -25,6 +25,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Automatically center the magnifier on the corresponding keypoint of the first person (class 0) when switching images; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
+- Delete the selected keypoint or object, or open a delete menu to clear all annotations or delete the current image and label file.
 - Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
@@ -61,7 +62,7 @@ Keyboard
 - `B`: Cycle annotation color schemes.
 - `Z` / `C` or `Up` / `Down Arrow`: Select previous / next object.
 - `X`: Unselect keypoint (if selected) or unselect object (show all).
-- `Delete` / `F`: Remove the selected keypoint, or remove the selected object.
+- `Delete` / `F`: Remove the selected keypoint or object; if nothing is selected, open the delete menu (all annotations or image + label files).
 - `+` / `E` / `-` / `Q`: Increment/decrement the selected keypoint name (available IDs only), or increment/decrement the selected object class ID when no keypoint is selected.
 
 Mouse
@@ -99,6 +100,7 @@ UI
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
 - The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
+- The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.

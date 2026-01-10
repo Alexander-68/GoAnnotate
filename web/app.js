@@ -6,9 +6,11 @@ const imagesDirList = document.getElementById("imagesDirList");
 const labelsDirList = document.getElementById("labelsDirList");
 const openModalBtn = document.getElementById("openModalBtn");
 const openHelpBtn = document.getElementById("openHelpBtn");
+const deleteBtn = document.getElementById("deleteBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
+const deleteModal = document.getElementById("deleteModal");
 const prevImageBtn = document.getElementById("prevImageBtn");
 const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
@@ -30,6 +32,9 @@ const magnifierMoveHandle = document.getElementById("magnifierMove");
 const magnifierResizeHandle = document.getElementById("magnifierResize");
 const magnifierMinimizeBtn = document.getElementById("magnifierMinimize");
 const workspace = document.querySelector(".workspace");
+const deleteAnnotationsBtn = document.getElementById("deleteAnnotationsBtn");
+const deleteImageBtn = document.getElementById("deleteImageBtn");
+const deleteCancelBtn = document.getElementById("deleteCancelBtn");
 
 let loadRequestId = 0;
 let pickerActiveTarget = null;
@@ -334,6 +339,12 @@ function init() {
     openHelp();
   });
 
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", () => {
+      handleDeleteRequest();
+    });
+  }
+
   helpModal.addEventListener("click", (event) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.close) {
@@ -455,6 +466,35 @@ function init() {
     });
   }
 
+  if (deleteModal) {
+    deleteModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.close) {
+        closeDeleteModal();
+      }
+    });
+  }
+
+  if (deleteCancelBtn) {
+    deleteCancelBtn.addEventListener("click", () => {
+      closeDeleteModal();
+    });
+  }
+
+  if (deleteAnnotationsBtn) {
+    deleteAnnotationsBtn.addEventListener("click", () => {
+      closeDeleteModal();
+      deleteAllAnnotations();
+    });
+  }
+
+  if (deleteImageBtn) {
+    deleteImageBtn.addEventListener("click", () => {
+      closeDeleteModal();
+      deleteCurrentImageAndLabels();
+    });
+  }
+
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("pointermove", onMagnifierDragMove);
@@ -501,6 +541,22 @@ function openHelp() {
 function closeHelp() {
   helpModal.classList.add("hidden");
   helpModal.setAttribute("aria-hidden", "true");
+}
+
+function openDeleteModal() {
+  if (!deleteModal) {
+    return;
+  }
+  deleteModal.classList.remove("hidden");
+  deleteModal.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteModal() {
+  if (!deleteModal) {
+    return;
+  }
+  deleteModal.classList.add("hidden");
+  deleteModal.setAttribute("aria-hidden", "true");
 }
 
 async function openPicker(target, title) {
@@ -2165,6 +2221,10 @@ function onKeyDown(event) {
       closeHelp();
       return;
     }
+    if (deleteModal && !deleteModal.classList.contains("hidden")) {
+      closeDeleteModal();
+      return;
+    }
   }
   if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
     return;
@@ -2246,7 +2306,7 @@ function onKeyDown(event) {
   }
 
   if (event.code === "Delete" || event.code === "KeyF") {
-    deleteSelection();
+    handleDeleteRequest();
   }
 
   if (isPlusKey(event) || event.code === "KeyE") {
@@ -2478,6 +2538,14 @@ function cycleVisibility() {
   markDirty();
 }
 
+function handleDeleteRequest() {
+  if (state.selection.objectIndex >= 0) {
+    deleteSelection();
+    return;
+  }
+  openDeleteModal();
+}
+
 function deleteSelection() {
   if (state.selection.objectIndex < 0) {
     return;
@@ -2500,6 +2568,69 @@ function deleteSelection() {
   state.annotations.splice(state.selection.objectIndex, 1);
   clearSelection();
   markDirty();
+}
+
+function deleteAllAnnotations() {
+  if (!state.imageName) {
+    setStatus("No image loaded.");
+    return;
+  }
+  if (state.annotations.length === 0) {
+    setStatus("No annotations to delete.");
+    return;
+  }
+  pushUndo();
+  state.annotations = [];
+  clearSelection();
+  markDirty();
+}
+
+async function deleteCurrentImageAndLabels() {
+  if (!state.imagesDir || !state.imageName) {
+    setStatus("No image loaded.");
+    return;
+  }
+  const payload = {
+    imagesDir: state.imagesDir,
+    labelsDir: state.labelsDir,
+    file: state.imageName
+  };
+  try {
+    const response = await fetch("/api/delete_image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error("Delete failed");
+    }
+    const deletedName = state.imageName;
+    const removedIndex = state.index;
+    state.images.splice(removedIndex, 1);
+    state.dirty = false;
+    state.modifiedSinceLoad = false;
+    state.undoStack = [];
+    clearSelection();
+
+    if (state.images.length === 0) {
+      state.loadingImage = false;
+      state.pendingIndex = null;
+      state.imageBitmap = null;
+      state.imageWidth = 0;
+      state.imageHeight = 0;
+      state.imageName = "";
+      state.annotations = [];
+      state.baseAnnotations = [];
+      updateImageNav();
+      setStatus(`Deleted ${deletedName}. No images left.`);
+      return;
+    }
+    const nextIndex = Math.min(removedIndex, state.images.length - 1);
+    await changeImage(nextIndex);
+    setStatus(`Deleted ${deletedName}`);
+  } catch (error) {
+    setStatus(`Delete error: ${error.message}`);
+  }
 }
 
 function cloneAnnotations(annotations) {
