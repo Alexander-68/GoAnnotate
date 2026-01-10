@@ -291,7 +291,16 @@ const state = {
       startWidth: MAGNIFIER_DEFAULT_WIDTH,
       startHeight: MAGNIFIER_DEFAULT_HEIGHT,
       target: null
-    }
+    },
+    minimizeDrag: {
+      active: false,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      moved: false,
+      target: null
+    },
+    ignoreMinimizeClick: false
   },
   spaceDown: false,
   dirty: false,
@@ -415,10 +424,17 @@ function init() {
   if (magnifierResizeHandle) {
     magnifierResizeHandle.addEventListener("pointerdown", (event) => beginMagnifierDrag(event, "resize"));
   }
+  if (magnifier) {
+    magnifier.addEventListener("pointerdown", (event) => beginMagnifierMinimizedDrag(event), { capture: true });
+  }
   if (magnifierMinimizeBtn) {
     magnifierMinimizeBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (state.magnifier.ignoreMinimizeClick) {
+        state.magnifier.ignoreMinimizeClick = false;
+        return;
+      }
       setMagnifierMinimized(!state.magnifier.minimized);
     });
   }
@@ -3240,8 +3256,55 @@ function beginMagnifierDrag(event, mode) {
   }
 }
 
+function beginMagnifierMinimizedDrag(event) {
+  if (!state.magnifier.active || !state.magnifier.minimized) {
+    return;
+  }
+  if (event.button !== undefined && event.button !== 0) {
+    return;
+  }
+  const pending = state.magnifier.minimizeDrag;
+  pending.active = true;
+  pending.pointerId = event.pointerId;
+  pending.startX = event.clientX;
+  pending.startY = event.clientY;
+  pending.moved = false;
+  pending.target = event.currentTarget;
+}
+
+function startMagnifierMoveFromMinimized(pending, event) {
+  ensureMagnifierAnchor();
+  const drag = state.magnifier.drag;
+  drag.mode = "move";
+  drag.pointerId = event.pointerId;
+  drag.startX = pending.startX;
+  drag.startY = pending.startY;
+  drag.startLeft = state.magnifier.screenX;
+  drag.startTop = state.magnifier.screenY;
+  drag.startWidth = state.magnifier.width;
+  drag.startHeight = state.magnifier.height;
+  drag.target = pending.target;
+  if (drag.target && drag.target.setPointerCapture) {
+    drag.target.setPointerCapture(event.pointerId);
+  }
+  state.magnifier.ignoreMinimizeClick = true;
+}
+
 function onMagnifierDragMove(event) {
   const drag = state.magnifier.drag;
+  const pending = state.magnifier.minimizeDrag;
+  if ((!drag || !drag.mode) && pending && pending.active) {
+    if (pending.pointerId !== null && event.pointerId !== pending.pointerId) {
+      return;
+    }
+    const dx = event.clientX - pending.startX;
+    const dy = event.clientY - pending.startY;
+    if (!pending.moved && Math.hypot(dx, dy) >= 4) {
+      pending.moved = true;
+      pending.active = false;
+      startMagnifierMoveFromMinimized(pending, event);
+    }
+  }
   if (!drag || !drag.mode) {
     return;
   }
@@ -3252,11 +3315,31 @@ function onMagnifierDragMove(event) {
   if (drag.mode === "move") {
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const nextLeft = drag.startLeft + dx;
-    const nextTop = drag.startTop + dy;
-    const clamped = clampMagnifierPosition(nextLeft, nextTop, state.magnifier.width, state.magnifier.height);
-    state.magnifier.screenX = clamped.left;
-    state.magnifier.screenY = clamped.top;
+    const rect = getWorkspaceRect();
+    let nextLeft = drag.startLeft + dx;
+    let nextTop = drag.startTop + dy;
+    let nextWidth = drag.startWidth;
+    let nextHeight = drag.startHeight;
+    if (!state.magnifier.minimized) {
+      const minWidth = Math.min(MAGNIFIER_MIN_WIDTH, rect.width);
+      const minHeight = Math.min(MAGNIFIER_MIN_HEIGHT, rect.height);
+      if (nextLeft + nextWidth > rect.width) {
+        nextWidth = clamp(rect.width - nextLeft, minWidth, rect.width);
+      }
+      if (nextTop + nextHeight > rect.height) {
+        nextHeight = clamp(rect.height - nextTop, minHeight, rect.height);
+      }
+    }
+    nextLeft = clamp(nextLeft, 0, Math.max(0, rect.width - nextWidth));
+    nextTop = clamp(nextTop, 0, Math.max(0, rect.height - nextHeight));
+    state.magnifier.screenX = nextLeft;
+    state.magnifier.screenY = nextTop;
+    if (!state.magnifier.minimized) {
+      state.magnifier.width = nextWidth;
+      state.magnifier.height = nextHeight;
+      state.magnifier.restoreWidth = nextWidth;
+      state.magnifier.restoreHeight = nextHeight;
+    }
     return;
   }
   if (drag.mode === "resize") {
@@ -3276,6 +3359,15 @@ function onMagnifierDragMove(event) {
 
 function endMagnifierDrag(event) {
   const drag = state.magnifier.drag;
+  const pending = state.magnifier.minimizeDrag;
+  if (pending && pending.active) {
+    if (pending.pointerId === null || event.pointerId === pending.pointerId) {
+      pending.active = false;
+      pending.pointerId = null;
+      pending.target = null;
+      pending.moved = false;
+    }
+  }
   if (!drag || !drag.mode) {
     return;
   }
@@ -3289,6 +3381,11 @@ function endMagnifierDrag(event) {
   drag.mode = null;
   drag.pointerId = null;
   drag.target = null;
+  if (state.magnifier.ignoreMinimizeClick) {
+    setTimeout(() => {
+      state.magnifier.ignoreMinimizeClick = false;
+    }, 0);
+  }
 }
 
 function updateMagnifier() {

@@ -75,7 +75,7 @@ Mouse
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
-- Magnifier corners: Drag top-left to move, drag bottom-right to resize (free aspect), click top-right to minimize and click the '+' to restore.
+- Magnifier corners: Drag top-left to move (keeps resizing when it hits the right/bottom edge), drag bottom-right to resize (free aspect), click top-right to minimize and click the '+' to restore. Drag the minimized tile to reposition it.
 - Double click: Center and unminimize the magnifier on the cursor.
 - Click or drag outside the image: No action.
 
@@ -91,6 +91,7 @@ Touch
 - Pinch: Zoom in or out (centered on the pinch midpoint, only over the image).
 - Pinch inside the magnifier: Zoom the magnifier view.
 - Double tap: Center and unminimize the magnifier on the tap.
+- Drag minimized magnifier: Reposition the minimized tile.
 - Touch outside the image: No action.
 
 UI
