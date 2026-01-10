@@ -1209,6 +1209,56 @@ function drawSkeleton(ctx, scale, annotation, isActive) {
   }
 }
 
+function parseColorToRgb(color) {
+  if (typeof color !== "string") {
+    return null;
+  }
+  const trimmed = color.trim();
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.slice(1);
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return { r, g, b };
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return { r, g, b };
+    }
+  }
+  const match = trimmed.match(/^rgba?\((.+)\)$/i);
+  if (match) {
+    const parts = match[1].split(",").map((part) => part.trim());
+    if (parts.length >= 3) {
+      const read = (value) => {
+        if (value.endsWith("%")) {
+          return Math.round(parseFloat(value) * 2.55);
+        }
+        return Math.round(parseFloat(value));
+      };
+      const r = read(parts[0]);
+      const g = read(parts[1]);
+      const b = read(parts[2]);
+      if ([r, g, b].every((n) => Number.isFinite(n))) {
+        return { r, g, b };
+      }
+    }
+  }
+  return null;
+}
+
+function getContrastColor(color) {
+  const rgb = parseColorToRgb(color);
+  if (!rgb) {
+    return "#ffffff";
+  }
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return luminance > 0.6 ? "#111111" : "#ffffff";
+}
+
 function drawKeypoints(ctx, scale, annotation, isActive) {
   const baseRadius = 4;
   const scheme = getColorScheme();
@@ -1220,11 +1270,18 @@ function drawKeypoints(ctx, scale, annotation, isActive) {
     const pos = keypointToPixels(kp);
     const isSelected = isActive && state.selection.keypointIndex === i;
     const radius = toWorldSize(isSelected ? 6 : baseRadius, scale);
+    const outerRadius = radius + toWorldSize(1, scale);
+    ctx.beginPath();
+    const visColor = scheme.visColors[kp.v] || scheme.visColors[2];
+    const lineWidth = toWorldSize(isSelected ? 4 : 1.5, scale);
+    ctx.arc(pos.x, pos.y, outerRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = getContrastColor(visColor);
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    const visColor = scheme.visColors[kp.v] || scheme.visColors[2];
     ctx.strokeStyle = visColor;
-    ctx.lineWidth = toWorldSize(isSelected ? 4 : 1.5, scale);
+    ctx.lineWidth = lineWidth;
     ctx.stroke();
   }
 }

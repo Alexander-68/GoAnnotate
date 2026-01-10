@@ -14,7 +14,7 @@ Download executable from Releases. No installation is required. Single file. Try
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
 - Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), and selected object size.
-- Render zoom-invariant line weights with unfilled keypoint circles for clearer pose review.
+- Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.     
