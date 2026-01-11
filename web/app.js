@@ -8,10 +8,12 @@ const openModalBtn = document.getElementById("openModalBtn");
 const openHelpBtn = document.getElementById("openHelpBtn");
 const deleteBtn = document.getElementById("deleteBtn");
 const undoBtn = document.getElementById("undoBtn");
+const markBtn = document.getElementById("markBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
 const deleteModal = document.getElementById("deleteModal");
+const markModal = document.getElementById("markModal");
 const prevImageBtn = document.getElementById("prevImageBtn");
 const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
@@ -36,6 +38,11 @@ const workspace = document.querySelector(".workspace");
 const deleteAnnotationsBtn = document.getElementById("deleteAnnotationsBtn");
 const deleteImageBtn = document.getElementById("deleteImageBtn");
 const deleteCancelBtn = document.getElementById("deleteCancelBtn");
+const markCurrentDoneBtn = document.getElementById("markCurrentDoneBtn");
+const markCurrentTodoBtn = document.getElementById("markCurrentTodoBtn");
+const markFolderDoneBtn = document.getElementById("markFolderDoneBtn");
+const markFolderTodoBtn = document.getElementById("markFolderTodoBtn");
+const markCancelBtn = document.getElementById("markCancelBtn");
 
 let loadRequestId = 0;
 let pickerActiveTarget = null;
@@ -317,7 +324,8 @@ const state = {
   loadingImage: false,
   pendingIndex: null,
   cachedViewState: null,
-  cachedMagnifierState: null
+  cachedMagnifierState: null,
+  reviewDone: new Set()
 };
 
 const storageKey = {
@@ -348,6 +356,11 @@ function init() {
   if (undoBtn) {
     undoBtn.addEventListener("click", () => {
       undo();
+    });
+  }
+  if (markBtn) {
+    markBtn.addEventListener("click", () => {
+      openMarkModal();
     });
   }
 
@@ -480,10 +493,23 @@ function init() {
       }
     });
   }
+  if (markModal) {
+    markModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.close) {
+        closeMarkModal();
+      }
+    });
+  }
 
   if (deleteCancelBtn) {
     deleteCancelBtn.addEventListener("click", () => {
       closeDeleteModal();
+    });
+  }
+  if (markCancelBtn) {
+    markCancelBtn.addEventListener("click", () => {
+      closeMarkModal();
     });
   }
 
@@ -498,6 +524,31 @@ function init() {
     deleteImageBtn.addEventListener("click", () => {
       closeDeleteModal();
       deleteCurrentImageAndLabels();
+    });
+  }
+
+  if (markCurrentDoneBtn) {
+    markCurrentDoneBtn.addEventListener("click", async () => {
+      closeMarkModal();
+      await markCurrentReviewStatus("Done", { autoAdvance: true });
+    });
+  }
+  if (markCurrentTodoBtn) {
+    markCurrentTodoBtn.addEventListener("click", async () => {
+      closeMarkModal();
+      await markCurrentReviewStatus("TODO", { autoAdvance: true });
+    });
+  }
+  if (markFolderDoneBtn) {
+    markFolderDoneBtn.addEventListener("click", async () => {
+      closeMarkModal();
+      await markFolderReviewStatus("Done");
+    });
+  }
+  if (markFolderTodoBtn) {
+    markFolderTodoBtn.addEventListener("click", async () => {
+      closeMarkModal();
+      await markFolderReviewStatus("TODO");
     });
   }
 
@@ -557,12 +608,32 @@ function openDeleteModal() {
   deleteModal.setAttribute("aria-hidden", "false");
 }
 
+function openMarkModal() {
+  if (!markModal) {
+    return;
+  }
+  if (!state.images.length) {
+    setStatus("No images loaded.");
+    return;
+  }
+  markModal.classList.remove("hidden");
+  markModal.setAttribute("aria-hidden", "false");
+}
+
 function closeDeleteModal() {
   if (!deleteModal) {
     return;
   }
   deleteModal.classList.add("hidden");
   deleteModal.setAttribute("aria-hidden", "true");
+}
+
+function closeMarkModal() {
+  if (!markModal) {
+    return;
+  }
+  markModal.classList.add("hidden");
+  markModal.setAttribute("aria-hidden", "true");
 }
 
 async function openPicker(target, title) {
@@ -876,6 +947,7 @@ async function openProject() {
     updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
 
     state.images = images;
+    await loadReviewStatus(labelsDir);
     state.keypointCount = DEFAULT_KPT_COUNT;
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
@@ -1432,9 +1504,10 @@ function updateOsd() {
     return;
   }
   const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
+  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
   const countLine = state.images.length
-    ? `Index: ${state.index + 1}/${state.images.length}`
-    : "Index: 0/0";
+    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
+    : "Index: 0/0 TODO: 0";
   const resLine = state.imageWidth && state.imageHeight
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
     : "Resolution: -";
@@ -1445,7 +1518,8 @@ function updateOsd() {
   }
 
   const statusLine = `Status: ${state.statusText}`;
-  const modLine = `Modified: ${state.modifiedSinceLoad ? "Yes" : "No"}`;
+  const reviewStatus = state.imageName ? getReviewStatusForImage(state.imageName) : "-";
+  const modLine = `Modified: ${state.modifiedSinceLoad ? "Yes" : "No"}, ${reviewStatus}`;
   const objectsLines = buildObjectLines();
   const selectedLines = buildSelectedLines();
   const lines = [fileLine, countLine, resLine, zoomLine, statusLine, modLine, ...objectsLines, ...selectedLines];
@@ -1464,6 +1538,139 @@ function updateImageNav() {
   const hasImages = total > 0;
   prevImageBtn.disabled = !hasImages || state.index <= 0;
   nextImageBtn.disabled = !hasImages || state.index >= total - 1;
+}
+
+function getReviewStatusForImage(imageName) {
+  if (!imageName) {
+    return "TODO";
+  }
+  return state.reviewDone.has(imageName) ? "Done" : "TODO";
+}
+
+function isTodoImage(imageEntry) {
+  if (!imageEntry) {
+    return false;
+  }
+  return !state.reviewDone.has(imageEntry.name);
+}
+
+function setReviewStatusForImage(imageName, status) {
+  if (!imageName) {
+    return;
+  }
+  if (status === "Done") {
+    state.reviewDone.add(imageName);
+  } else {
+    state.reviewDone.delete(imageName);
+  }
+}
+
+async function loadReviewStatus(labelsDir) {
+  state.reviewDone = new Set();
+  if (!labelsDir) {
+    return;
+  }
+  try {
+    const response = await fetch(`/api/review_status?labelsDir=${encodeURIComponent(labelsDir)}`);
+    if (!response.ok) {
+      return;
+    }
+    const data = await response.json();
+    const done = Array.isArray(data.done) ? data.done : [];
+    const available = new Set(state.images.map((entry) => entry.name));
+    state.reviewDone = new Set(
+      done.map((entry) => String(entry)).filter((entry) => available.has(entry))
+    );
+  } catch (error) {
+    console.error("Review status load error:", error);
+  }
+}
+
+async function saveReviewStatus() {
+  if (!state.labelsDir) {
+    return false;
+  }
+  const payload = {
+    labelsDir: state.labelsDir,
+    done: Array.from(state.reviewDone)
+  };
+  try {
+    const response = await fetch("/api/review_status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("Review status save error:", error);
+    return false;
+  }
+}
+
+function findNextTodoIndex(startIndex, step) {
+  const total = state.images.length;
+  if (total === 0) {
+    return -1;
+  }
+  const direction = step >= 0 ? 1 : -1;
+  for (let i = 0; i < total; i += 1) {
+    const idx = (startIndex + i * direction + total) % total;
+    if (isTodoImage(state.images[idx])) {
+      return idx;
+    }
+  }
+  return -1;
+}
+
+function navigateTodo(step) {
+  if (state.images.length === 0) {
+    return;
+  }
+  const current = getActiveIndex();
+  const startIndex = current + (step >= 0 ? 1 : -1);
+  const nextIndex = findNextTodoIndex(startIndex, step);
+  if (nextIndex === -1) {
+    setStatus("No TODO images.");
+    return;
+  }
+  changeImage(nextIndex);
+}
+
+async function markCurrentReviewStatus(status, options = {}) {
+  if (!state.imageName) {
+    setStatus("No image loaded.");
+    return;
+  }
+  setReviewStatusForImage(state.imageName, status);
+  const saved = await saveReviewStatus();
+  if (!saved) {
+    setStatus("Unable to save review status.");
+    return;
+  }
+  setStatus(`Marked ${state.imageName} ${status}.`);
+  if (options.autoAdvance) {
+    navigateTodo(1);
+  }
+}
+
+async function markFolderReviewStatus(status) {
+  if (state.images.length === 0) {
+    setStatus("No images loaded.");
+    return;
+  }
+  if (status === "Done") {
+    state.images.forEach((entry) => {
+      setReviewStatusForImage(entry.name, "Done");
+    });
+  } else {
+    state.reviewDone.clear();
+  }
+  const saved = await saveReviewStatus();
+  if (!saved) {
+    setStatus("Unable to save review status.");
+    return;
+  }
+  setStatus(`Marked folder ${status}.`);
 }
 
 function buildObjectLines() {
@@ -2231,6 +2438,10 @@ function onKeyDown(event) {
       closeDeleteModal();
       return;
     }
+    if (markModal && !markModal.classList.contains("hidden")) {
+      closeMarkModal();
+      return;
+    }
   }
   if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
     return;
@@ -2248,17 +2459,39 @@ function onKeyDown(event) {
     return;
   }
 
+  if (event.code === "KeyD" && event.ctrlKey) {
+    event.preventDefault();
+    markCurrentReviewStatus("Done", { autoAdvance: true });
+    return;
+  }
+
+  if (event.code === "KeyA" && event.ctrlKey) {
+    event.preventDefault();
+    markCurrentReviewStatus("TODO", { autoAdvance: true });
+    return;
+  }
+
   if (event.code === "Space") {
     state.spaceDown = true;
     event.preventDefault();
   }
 
-  if (event.code === "KeyA" || event.code === "ArrowLeft") {
+  if (event.code === "KeyA") {
+    event.preventDefault();
+    navigateTodo(-1);
+  }
+
+  if (event.code === "KeyD") {
+    event.preventDefault();
+    navigateTodo(1);
+  }
+
+  if (event.code === "ArrowLeft") {
     event.preventDefault();
     changeImage(getActiveIndex() - 1);
   }
 
-  if (event.code === "KeyD" || event.code === "ArrowRight") {
+  if (event.code === "ArrowRight") {
     event.preventDefault();
     changeImage(getActiveIndex() + 1);
   }
@@ -2613,6 +2846,8 @@ async function deleteCurrentImageAndLabels() {
     const deletedName = state.imageName;
     const removedIndex = state.index;
     state.images.splice(removedIndex, 1);
+    state.reviewDone.delete(deletedName);
+    await saveReviewStatus();
     state.dirty = false;
     state.modifiedSinceLoad = false;
     state.undoStack = [];
@@ -2833,6 +3068,7 @@ async function saveLabels() {
   if (content === null) {
     return;
   }
+  const shouldMarkDone = state.modifiedSinceLoad;
   const payload = {
     labelsDir: state.labelsDir,
     file: labelName,
@@ -2849,7 +3085,16 @@ async function saveLabels() {
       throw new Error("Save failed");
     }
     state.dirty = false;
-    setStatus(`Saved ${labelName}`);
+    let reviewSaved = true;
+    if (shouldMarkDone) {
+      setReviewStatusForImage(state.imageName, "Done");
+      reviewSaved = await saveReviewStatus();
+    }
+    if (reviewSaved) {
+      setStatus(`Saved ${labelName}`);
+    } else {
+      setStatus(`Saved ${labelName}, review status not saved.`);
+    }
   } catch (error) {
     setStatus(`Save error: ${error.message}`);
   }

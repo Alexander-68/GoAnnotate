@@ -63,6 +63,17 @@ type deleteResponse struct {
 	DeletedLabel bool `json:"deletedLabel"`
 }
 
+type reviewStatusPayload struct {
+	LabelsDir string   `json:"labelsDir"`
+	Done      []string `json:"done"`
+}
+
+type reviewStatusResponse struct {
+	Done []string `json:"done"`
+}
+
+const reviewStatusFilename = "review_status.json"
+
 func main() {
 	ip := flag.String("ip", "127.0.0.1", "IP address to listen on")
 	port := flag.Int("port", 8080, "Port to listen on")
@@ -87,6 +98,8 @@ func main() {
 	mux.HandleFunc("POST /api/delete_image", handleDeleteImage)
 	mux.HandleFunc("GET /api/browse", handleBrowse)
 	mux.HandleFunc("GET /api/suggest_labels", handleSuggestLabels)
+	mux.HandleFunc("GET /api/review_status", handleReviewStatusGet)
+	mux.HandleFunc("POST /api/review_status", handleReviewStatusPost)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -524,6 +537,95 @@ func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Deleted image=%q label=%t", payload.File, result.DeletedLabel)
 	writeJSON(w, result)
+}
+
+func handleReviewStatusGet(w http.ResponseWriter, r *http.Request) {
+	labelsDir := strings.TrimSpace(r.URL.Query().Get("labelsDir"))
+	if labelsDir == "" {
+		http.Error(w, "labelsDir is required", http.StatusBadRequest)
+		return
+	}
+	fullPath, err := safeJoin(labelsDir, reviewStatusFilename)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(w, reviewStatusResponse{Done: []string{}})
+			return
+		}
+		http.Error(w, "unable to read review status", http.StatusInternalServerError)
+		return
+	}
+	if len(data) == 0 {
+		writeJSON(w, reviewStatusResponse{Done: []string{}})
+		return
+	}
+	var payload reviewStatusResponse
+	if err := json.Unmarshal(data, &payload); err != nil {
+		http.Error(w, "invalid review status", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, reviewStatusResponse{Done: payload.Done})
+}
+
+func handleReviewStatusPost(w http.ResponseWriter, r *http.Request) {
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	defer body.Close()
+	payloadBytes, err := io.ReadAll(body)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	var payload reviewStatusPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	payload.LabelsDir = strings.TrimSpace(payload.LabelsDir)
+	if payload.LabelsDir == "" {
+		http.Error(w, "labelsDir is required", http.StatusBadRequest)
+		return
+	}
+	fullPath, err := safeJoin(payload.LabelsDir, reviewStatusFilename)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	done := make([]string, 0, len(payload.Done))
+	for _, item := range payload.Done {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		done = append(done, trimmed)
+	}
+	if len(done) == 0 {
+		if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "unable to clear review status", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	slices.Sort(done)
+	done = slices.Compact(done)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
+		return
+	}
+	data, err := json.MarshalIndent(reviewStatusResponse{Done: done}, "", "  ")
+	if err != nil {
+		http.Error(w, "unable to encode review status", http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+		http.Error(w, "unable to save review status", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {

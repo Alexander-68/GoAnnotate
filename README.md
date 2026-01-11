@@ -30,6 +30,8 @@ Download executable from Releases. No installation is required. Single file. Try
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
+- Mark the current image review status as Done after edits are saved.
+- Track review status per image (TODO/Done) in `labelsDir/review_status.json`; missing or empty means everything is TODO.
 - Allow undo per image and clear undo history when switching images.
 - Preserve the current pan/zoom and magnifier state when switching images.
 - Keep the previous frame visible while loading the next image to avoid blank flashes during navigation.
@@ -54,10 +56,13 @@ GoAnnotate auto-detects the pose format by counting keypoint triplets in each la
 ## Interactions
 
 Keyboard
-- `A` / `D` or `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).     
+- `A` / `D`: Previous / next TODO image (saves current labels before switching).
+- `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
+- `Ctrl` + `D`: Mark the current image as Done (auto-advance to next TODO).
+- `Ctrl` + `A`: Mark the current image as TODO (auto-advance to next TODO).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
 - `B`: Cycle annotation color schemes.
 - `Z` / `C` or `Up` / `Down Arrow`: Select previous / next object.
@@ -102,11 +107,13 @@ UI
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`).
+- The `Mark` button below `Undo` opens review controls for the current image or entire folder.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
+- The OSD `Modified` line shows both edit status and review status (TODO/Done).
 
 ## Run
 

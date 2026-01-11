@@ -16,11 +16,12 @@
         <button id="openHelpBtn" class="btn ghost" type="button">Help</button>
         <button id="deleteBtn" class="btn ghost" type="button">Del</button>
         <button id="undoBtn" class="btn ghost" type="button">Undo</button>
+        <button id="markBtn" class="btn ghost" type="button">Mark</button>
       </div>
       <div class="osd" id="osd"></div>
       <div class="image-nav" aria-label="Image navigation">
-        <button id="prevImageBtn" class="btn ghost nav-btn" type="button" title="Previous image (A)" aria-label="Previous image">Prev</button>
-        <button id="nextImageBtn" class="btn ghost nav-btn" type="button" title="Next image (D)" aria-label="Next image">Next</button>
+        <button id="prevImageBtn" class="btn ghost nav-btn" type="button" title="Previous image (Left Arrow)" aria-label="Previous image">Prev</button>
+        <button id="nextImageBtn" class="btn ghost nav-btn" type="button" title="Next image (Right Arrow)" aria-label="Next image">Next</button>
       </div>
       <div id="magnifier" class="magnifier hidden">
         <button id="magnifierMove" class="magnifier-handle magnifier-handle-move" type="button" title="Drag to move magnifier" aria-label="Drag to move magnifier"></button>
@@ -58,9 +59,17 @@
 
         <div class="modal-section-title">Navigation</div>
         <div class="keys-grid">
-            <div class="key-item"><span>A / D / &larr; &rarr;</span> <span>Prev / Next Image</span></div>
+            <div class="key-item"><span>A / D</span> <span>Prev / Next TODO Image</span></div>
+            <div class="key-item"><span>&larr; &rarr;</span> <span>Prev / Next Image</span></div>
             <div class="key-item"><span>Home / End</span> <span>First / Last Image</span></div>
             <div class="key-item"><span>Buttons</span> <span>On-screen Nav</span></div>
+        </div>
+
+        <div class="modal-section-title">Review</div>
+        <div class="keys-grid">
+            <div class="key-item"><span>Ctrl + D</span> <span>Mark Done</span></div>
+            <div class="key-item"><span>Ctrl + A</span> <span>Mark TODO</span></div>
+            <div class="key-item"><span>Mark Button</span> <span>Open review menu</span></div>
         </div>
 
         <div class="modal-section-title">View & Controls</div>
@@ -112,6 +121,25 @@
         <button id="deleteAnnotationsBtn" class="btn ghost" type="button">Delete All Annotations</button>
         <button id="deleteImageBtn" class="btn" type="button">Delete Image + Labels</button>
         <button id="deleteCancelBtn" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="markModal" aria-hidden="true">
+    <div class="modal-scrim" data-close="true"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="markModalTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="markModalTitle">Mark Review</h2>
+        <button class="modal-close" type="button" data-close="true">X</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Set review status to Done or TODO for the current image or the entire folder.</p>
+      </div>
+      <div class="modal-actions">
+        <button id="markCurrentDoneBtn" class="btn ghost" type="button">Current Done</button>
+        <button id="markCurrentTodoBtn" class="btn ghost" type="button">Current TODO</button>
+        <button id="markFolderDoneBtn" class="btn ghost" type="button">Folder Done</button>
+        <button id="markFolderTodoBtn" class="btn" type="button">Folder TODO</button>
+        <button id="markCancelBtn" class="btn ghost" type="button">Cancel</button>
       </div>
     </div>
   </div>
