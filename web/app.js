@@ -1641,6 +1641,13 @@ async function markCurrentReviewStatus(status, options = {}) {
     setStatus("No image loaded.");
     return;
   }
+  if (state.dirty) {
+    await saveLabels({ skipReviewUpdate: true });
+    if (state.dirty) {
+      setStatus("Save failed. Review status not updated.");
+      return;
+    }
+  }
   setReviewStatusForImage(state.imageName, status);
   const saved = await saveReviewStatus();
   if (!saved) {
@@ -2478,7 +2485,7 @@ function onKeyDown(event) {
 
   if (event.code === "KeyA") {
     event.preventDefault();
-    navigateTodo(-1);
+    changeImage(getActiveIndex() - 1);
   }
 
   if (event.code === "KeyD") {
@@ -3059,7 +3066,7 @@ function markDirty() {
   setStatus("Unsaved changes...");
 }
 
-async function saveLabels() {
+async function saveLabels(options = {}) {
   if (!state.imagesDir || !state.labelsDir || !state.imageName) {
     return;
   }
@@ -3068,7 +3075,7 @@ async function saveLabels() {
   if (content === null) {
     return;
   }
-  const shouldMarkDone = state.modifiedSinceLoad;
+  const shouldMarkDone = state.modifiedSinceLoad && !options.skipReviewUpdate;
   const payload = {
     labelsDir: state.labelsDir,
     file: labelName,

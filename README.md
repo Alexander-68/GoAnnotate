@@ -56,7 +56,8 @@ GoAnnotate auto-detects the pose format by counting keypoint triplets in each la
 ## Interactions
 
 Keyboard
-- `A` / `D`: Previous / next TODO image (saves current labels before switching).
+- `A`: Previous image (saves current labels before switching).
+- `D`: Next TODO image (saves current labels before switching).
 - `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
@@ -108,6 +109,7 @@ UI
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`).
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
+- Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
 - Recent folders appear as a dropdown suggestion for each directory field.
