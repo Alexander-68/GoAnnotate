@@ -197,6 +197,9 @@ const COLOR_SCHEMES = [
   }
 ];
 const MIN_BBOX_PIXELS = 4;
+const CROP_DASH_PX = 6;
+const CROP_GAP_PX = 4;
+const CROP_FILL_COLOR = "rgba(10, 10, 10, 0.08)";
 const PAN_DRAG_THRESHOLD = 3;
 const TOUCH_SWIPE_THRESHOLD = 80;
 const TOUCH_SWIPE_MAX_TIME = 350;
@@ -215,6 +218,7 @@ const state = {
   images: [],
   index: 0,
   imageName: "",
+  imageVersions: {},
   imageBitmap: null,
   imageWidth: 0,
   imageHeight: 0,
@@ -239,6 +243,14 @@ const state = {
     screenX: 0,
     screenY: 0
   },
+  crop: {
+    active: false,
+    bbox: null
+  },
+  baseCrop: {
+    active: false,
+    bbox: null
+  },
   view: {
     scale: 1,
     offsetX: 0,
@@ -260,6 +272,7 @@ const state = {
     startOffsetX: 0,
     startOffsetY: 0,
     startCorners: null,
+    cropCorner: null,
     snapshotTaken: false,
     pendingSelection: null
   },
@@ -947,6 +960,7 @@ async function openProject() {
     updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
 
     state.images = images;
+    state.imageVersions = {};
     await loadReviewStatus(labelsDir);
     state.keypointCount = DEFAULT_KPT_COUNT;
     if (state.images.length === 0) {
@@ -959,6 +973,8 @@ async function openProject() {
       state.imageName = "";
       state.annotations = [];
       state.baseAnnotations = [];
+      state.crop = { active: false, bbox: null };
+      state.baseCrop = { active: false, bbox: null };
       state.undoStack = [];
       state.dirty = false;
       state.modifiedSinceLoad = false;
@@ -993,7 +1009,8 @@ async function loadImage(index, options = {}) {
   setStatus(`Loading ${entry.name}...`);
 
   try {
-    const imageUrl = `/api/image?imagesDir=${encodeURIComponent(state.imagesDir)}&file=${encodeURIComponent(entry.name)}`;
+    const version = state.imageVersions[entry.name] || 0;
+    const imageUrl = `/api/image?imagesDir=${encodeURIComponent(state.imagesDir)}&file=${encodeURIComponent(entry.name)}&v=${version}`;
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
       throw new Error("Unable to load image");
@@ -1030,6 +1047,8 @@ async function loadImage(index, options = {}) {
     state.baseAnnotations = cloneAnnotations(annotations);
     state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
     state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
+    state.crop = { active: false, bbox: null };
+    state.baseCrop = { active: false, bbox: null };
     state.dirty = false;
     state.modifiedSinceLoad = false;
     state.undoStack = [];
@@ -1206,6 +1225,13 @@ function serializeLabels() {
   return Labels.serializeLabels(state.annotations);
 }
 
+function serializeLabelsFor(annotations) {
+  if (!ensureLabelsModule()) {
+    return null;
+  }
+  return Labels.serializeLabels(annotations);
+}
+
 function clamp(value, min, max) {
   if (Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
@@ -1266,6 +1292,12 @@ function render() {
     }
     if (state.dragging.mode === "newBBox") {
       drawNewBBox(ctx, viewScale);
+    }
+    if (state.crop.active && state.dragging.mode !== "newCrop") {
+      drawCrop(ctx, viewScale);
+    }
+    if (state.dragging.mode === "newCrop") {
+      drawNewCrop(ctx, viewScale);
     }
     drawObjectLabels(visible);
     drawHoverLabel();
@@ -1336,6 +1368,72 @@ function drawNewBBox(ctx, scale) {
   ctx.lineWidth = toWorldSize(2, scale);
   ctx.setLineDash([toWorldSize(6, scale), toWorldSize(4, scale)]);
   ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
+
+function drawCrop(ctx, scale) {
+  if (!state.crop.active || !state.crop.bbox) {
+    return;
+  }
+  const { x, y, w, h } = cropToPixels(state.crop.bbox);
+  if (w < 1 || h < 1) {
+    return;
+  }
+  drawCropBox(ctx, scale, x, y, w, h);
+}
+
+function drawNewCrop(ctx, scale) {
+  const { startWorldX, startWorldY, currentWorldX, currentWorldY } = state.dragging;
+  if (!Number.isFinite(startWorldX) || !Number.isFinite(startWorldY)) {
+    return;
+  }
+  const endX = Number.isFinite(currentWorldX) ? currentWorldX : startWorldX;
+  const endY = Number.isFinite(currentWorldY) ? currentWorldY : startWorldY;
+  const x = Math.min(startWorldX, endX);
+  const y = Math.min(startWorldY, endY);
+  const w = Math.abs(endX - startWorldX);
+  const h = Math.abs(endY - startWorldY);
+  if (w < 1 || h < 1) {
+    return;
+  }
+  drawCropBox(ctx, scale, x, y, w, h);
+}
+
+function drawCropBox(ctx, scale, x, y, w, h) {
+  const dash = toWorldSize(CROP_DASH_PX, scale);
+  const gap = toWorldSize(CROP_GAP_PX, scale);
+  ctx.save();
+  ctx.fillStyle = CROP_FILL_COLOR;
+  ctx.fillRect(x, y, w, h);
+  ctx.lineWidth = toWorldSize(2, scale);
+  ctx.setLineDash([dash, gap]);
+  ctx.strokeStyle = "#0b0b0b";
+  ctx.lineDashOffset = 0;
+  ctx.strokeRect(x, y, w, h);
+  ctx.lineWidth = toWorldSize(1, scale);
+  ctx.strokeStyle = "#fef6e8";
+  ctx.lineDashOffset = dash / 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+  drawCropCorners(ctx, scale, x, y, w, h);
+}
+
+function drawCropCorners(ctx, scale, x, y, w, h) {
+  const size = toWorldSize(8, scale);
+  const corners = [
+    [x, y],
+    [x + w, y],
+    [x, y + h],
+    [x + w, y + h]
+  ];
+  ctx.save();
+  ctx.fillStyle = "#fef6e8";
+  ctx.strokeStyle = "#0b0b0b";
+  ctx.lineWidth = toWorldSize(1, scale);
+  for (const [cx, cy] of corners) {
+    ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+    ctx.strokeRect(cx - size / 2, cy - size / 2, size, size);
+  }
   ctx.restore();
 }
 
@@ -1741,6 +1839,13 @@ function bboxToPixels(bbox) {
   };
 }
 
+function cropToPixels(bbox) {
+  if (!bbox) {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  return bboxToPixels(bbox);
+}
+
 function keypointToPixels(kp) {
   return {
     x: kp.x * state.imageWidth,
@@ -1797,6 +1902,7 @@ function onMouseDown(event) {
 
   state.dragging.snapshotTaken = false;
   state.dragging.pendingSelection = null;
+  state.dragging.cropCorner = null;
   state.dragging.isMagnifier = isMagnifier; // Latch context
   clearHover();
 
@@ -1816,6 +1922,17 @@ function onMouseDown(event) {
   }
 
   if (event.button !== 0) {
+    return;
+  }
+
+  if (event.altKey) {
+    state.dragging.mode = "newCrop";
+    state.dragging.startWorldX = worldX;
+    state.dragging.startWorldY = worldY;
+    state.dragging.currentWorldX = worldX;
+    state.dragging.currentWorldY = worldY;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
@@ -1861,6 +1978,16 @@ function onMouseDown(event) {
       state.magnifier.x = worldX;
       state.magnifier.y = worldY;
     }
+    return;
+  }
+
+  const cropPick = pickCropCorner(worldX, worldY, pos.scale);
+  if (cropPick) {
+    state.dragging.mode = "cropCorner";
+    state.dragging.startCorners = cropPick.corners;
+    state.dragging.cropCorner = cropPick.corner;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
@@ -1950,6 +2077,35 @@ function onMouseMove(event) {
       state.magnifier.x = worldX;
       state.magnifier.y = worldY;
     }
+    return;
+  }
+
+  if (state.dragging.mode === "newCrop") {
+    state.dragging.currentWorldX = worldX;
+    state.dragging.currentWorldY = worldY;
+    return;
+  }
+
+  if (state.dragging.mode === "cropCorner") {
+    if (!state.crop.bbox || !state.dragging.startCorners) {
+      return;
+    }
+    ensureUndoSnapshot();
+    const nx = clamp(worldX / state.imageWidth, 0, 1);
+    const ny = clamp(worldY / state.imageHeight, 0, 1);
+    const updated = updateCorners(state.dragging.startCorners, state.dragging.cropCorner, nx, ny);
+    const minX = clamp(Math.min(updated.x1, updated.x2), 0, 1);
+    const maxX = clamp(Math.max(updated.x1, updated.x2), 0, 1);
+    const minY = clamp(Math.min(updated.y1, updated.y2), 0, 1);
+    const maxY = clamp(Math.max(updated.y1, updated.y2), 0, 1);
+    state.crop.bbox = {
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      w: Math.max(0.0001, maxX - minX),
+      h: Math.max(0.0001, maxY - minY)
+    };
+    state.crop.active = true;
+    markDirty();
     return;
   }
 
@@ -2043,6 +2199,15 @@ function onMouseUp(event) {
     finishNewBBox(event);
     state.dragging.mode = null;
     return;
+  }
+  if (state.dragging.mode === "newCrop") {
+    finishNewCrop(event);
+    state.dragging.mode = null;
+    state.dragging.cropCorner = null;
+    return;
+  }
+  if (state.dragging.mode === "cropCorner") {
+    state.dragging.cropCorner = null;
   }
   state.dragging.mode = null;
 }
@@ -2769,6 +2934,42 @@ function finishNewBBox(event) {
   markDirty();
 }
 
+function finishNewCrop(event) {
+  const startX = state.dragging.startWorldX;
+  const startY = state.dragging.startWorldY;
+  let endX = state.dragging.currentWorldX;
+  let endY = state.dragging.currentWorldY;
+  if (event) {
+    const pos = getMousePos(event);
+    endX = pos.worldX;
+    endY = pos.worldY;
+  }
+  if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+    return;
+  }
+  if (!Number.isFinite(endX) || !Number.isFinite(endY)) {
+    return;
+  }
+  const widthPx = Math.abs(endX - startX);
+  const heightPx = Math.abs(endY - startY);
+  if (widthPx < MIN_BBOX_PIXELS || heightPx < MIN_BBOX_PIXELS) {
+    return;
+  }
+  pushUndo();
+  const minX = clamp(Math.min(startX, endX) / state.imageWidth, 0, 1);
+  const maxX = clamp(Math.max(startX, endX) / state.imageWidth, 0, 1);
+  const minY = clamp(Math.min(startY, endY) / state.imageHeight, 0, 1);
+  const maxY = clamp(Math.max(startY, endY) / state.imageHeight, 0, 1);
+  state.crop.bbox = {
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+    w: Math.max(0.0001, maxX - minX),
+    h: Math.max(0.0001, maxY - minY)
+  };
+  state.crop.active = true;
+  markDirty();
+}
+
 function cycleVisibility() {
   const obj = state.annotations[state.selection.objectIndex];
   if (!obj) {
@@ -2899,8 +3100,26 @@ function cloneAnnotations(annotations) {
   }));
 }
 
+function cloneCropState(crop) {
+  if (!crop || !crop.active || !crop.bbox) {
+    return { active: false, bbox: null };
+  }
+  return {
+    active: true,
+    bbox: {
+      cx: crop.bbox.cx,
+      cy: crop.bbox.cy,
+      w: crop.bbox.w,
+      h: crop.bbox.h
+    }
+  };
+}
+
 function pushUndo() {
-  state.undoStack.push(cloneAnnotations(state.annotations));
+  state.undoStack.push({
+    annotations: cloneAnnotations(state.annotations),
+    crop: cloneCropState(state.crop)
+  });
   if (state.undoStack.length > MAX_UNDO) {
     state.undoStack.shift();
   }
@@ -2919,15 +3138,33 @@ function undo() {
     return;
   }
   const snapshot = state.undoStack.pop();
-  state.annotations = snapshot;
+  if (Array.isArray(snapshot)) {
+    state.annotations = snapshot;
+  } else {
+    state.annotations = snapshot.annotations || [];
+    state.crop = cloneCropState(snapshot.crop);
+  }
   clearSelection();
-  if (annotationsEqual(state.annotations, state.baseAnnotations)) {
+  if (annotationsEqual(state.annotations, state.baseAnnotations)
+    && cropEqual(state.crop, state.baseCrop)) {
     state.dirty = false;
     state.modifiedSinceLoad = false;
     setStatus(`${state.imageName} (${state.index + 1}/${state.images.length})`);
     return;
   }
   markDirty();
+}
+
+function cropEqual(left, right) {
+  const lActive = left && left.active && left.bbox;
+  const rActive = right && right.active && right.bbox;
+  if (!lActive && !rActive) {
+    return true;
+  }
+  if (!lActive || !rActive) {
+    return false;
+  }
+  return bboxEqual(left.bbox, right.bbox);
 }
 
 function annotationsEqual(left, right) {
@@ -3066,12 +3303,94 @@ function markDirty() {
   setStatus("Unsaved changes...");
 }
 
+function getCropRectPixels() {
+  if (!state.crop.active || !state.crop.bbox) {
+    return null;
+  }
+  const minX = clamp((state.crop.bbox.cx - state.crop.bbox.w / 2) * state.imageWidth, 0, state.imageWidth);
+  const maxX = clamp((state.crop.bbox.cx + state.crop.bbox.w / 2) * state.imageWidth, 0, state.imageWidth);
+  const minY = clamp((state.crop.bbox.cy - state.crop.bbox.h / 2) * state.imageHeight, 0, state.imageHeight);
+  const maxY = clamp((state.crop.bbox.cy + state.crop.bbox.h / 2) * state.imageHeight, 0, state.imageHeight);
+  const x = Math.floor(minX);
+  const y = Math.floor(minY);
+  const w = Math.max(1, Math.ceil(maxX) - x);
+  const h = Math.max(1, Math.ceil(maxY) - y);
+  if (w < 1 || h < 1) {
+    return null;
+  }
+  return { x, y, w, h };
+}
+
+function remapAnnotationsForCrop(annotations, cropRect) {
+  if (!cropRect) {
+    return annotations;
+  }
+  const cropX2 = cropRect.x + cropRect.w;
+  const cropY2 = cropRect.y + cropRect.h;
+  const remapped = [];
+  for (const ann of annotations) {
+    if (!ann || !ann.bbox) {
+      continue;
+    }
+    const { x, y, w, h } = bboxToPixels(ann.bbox);
+    const x2 = x + w;
+    const y2 = y + h;
+    const ix1 = Math.max(x, cropRect.x);
+    const iy1 = Math.max(y, cropRect.y);
+    const ix2 = Math.min(x2, cropX2);
+    const iy2 = Math.min(y2, cropY2);
+    const iw = ix2 - ix1;
+    const ih = iy2 - iy1;
+    if (iw < MIN_BBOX_PIXELS || ih < MIN_BBOX_PIXELS) {
+      continue;
+    }
+    const minX = clamp((ix1 - cropRect.x) / cropRect.w, 0, 1);
+    const maxX = clamp((ix2 - cropRect.x) / cropRect.w, 0, 1);
+    const minY = clamp((iy1 - cropRect.y) / cropRect.h, 0, 1);
+    const maxY = clamp((iy2 - cropRect.y) / cropRect.h, 0, 1);
+    const next = {
+      classId: ann.classId,
+      bbox: {
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2,
+        w: Math.max(0.0001, maxX - minX),
+        h: Math.max(0.0001, maxY - minY)
+      },
+      keypoints: [],
+      hasPose: ann.hasPose
+    };
+    if (Array.isArray(ann.keypoints) && ann.keypoints.length > 0) {
+      for (const kp of ann.keypoints) {
+        if (!kp || kp.v === 0) {
+          next.keypoints.push({ x: 0, y: 0, v: 0 });
+          continue;
+        }
+        const px = kp.x * state.imageWidth;
+        const py = kp.y * state.imageHeight;
+        if (px < cropRect.x || px > cropX2 || py < cropRect.y || py > cropY2) {
+          next.keypoints.push({ x: 0, y: 0, v: 0 });
+          continue;
+        }
+        const nx = clamp((px - cropRect.x) / cropRect.w, 0, 1);
+        const ny = clamp((py - cropRect.y) / cropRect.h, 0, 1);
+        next.keypoints.push({ x: nx, y: ny, v: kp.v });
+      }
+    }
+    remapped.push(next);
+  }
+  return remapped;
+}
+
 async function saveLabels(options = {}) {
   if (!state.imagesDir || !state.labelsDir || !state.imageName) {
     return;
   }
   const labelName = `${stripExt(state.imageName)}.txt`;
-  const content = serializeLabels();
+  const cropRect = getCropRectPixels();
+  const annotationsForSave = cropRect
+    ? remapAnnotationsForCrop(state.annotations, cropRect)
+    : state.annotations;
+  const content = serializeLabelsFor(annotationsForSave);
   if (content === null) {
     return;
   }
@@ -3079,7 +3398,10 @@ async function saveLabels(options = {}) {
   const payload = {
     labelsDir: state.labelsDir,
     file: labelName,
-    content
+    content,
+    imagesDir: cropRect ? state.imagesDir : undefined,
+    imageFile: cropRect ? state.imageName : undefined,
+    crop: cropRect || undefined
   };
 
   try {
@@ -3089,9 +3411,14 @@ async function saveLabels(options = {}) {
       body: JSON.stringify(payload)
     });
     if (!response.ok) {
-      throw new Error("Save failed");
+      const errorText = await response.text();
+      throw new Error(errorText || "Save failed");
     }
     state.dirty = false;
+    if (cropRect) {
+      state.crop = { active: false, bbox: null };
+      state.imageVersions[state.imageName] = (state.imageVersions[state.imageName] || 0) + 1;
+    }
     let reviewSaved = true;
     if (shouldMarkDone) {
       setReviewStatusForImage(state.imageName, "Done");
@@ -3125,6 +3452,25 @@ function pickKeypoint(screenX, screenY) {
       if (dist <= radius) {
         return { objectIndex: idx, keypointIndex: k };
       }
+    }
+  }
+  return null;
+}
+
+function pickCropCorner(worldX, worldY, scale) {
+  if (!state.crop.active || !state.crop.bbox) {
+    return null;
+  }
+  const radius = toWorldSize(10, scale);
+  const corners = cropCorners(state.crop.bbox);
+  if (!corners) {
+    return null;
+  }
+  for (const corner of ["tl", "tr", "bl", "br"]) {
+    const cornerPos = corners[corner];
+    const dist = Math.hypot(worldX - cornerPos.x, worldY - cornerPos.y);
+    if (dist <= radius) {
+      return { corner, corners };
     }
   }
   return null;
@@ -3179,6 +3525,13 @@ function bboxCorners(bbox) {
     bl: { x: x1, y: y2 },
     br: { x: x2, y: y2 }
   };
+}
+
+function cropCorners(bbox) {
+  if (!bbox) {
+    return null;
+  }
+  return bboxCorners(bbox);
 }
 
 function updateCorners(corners, activeCorner, nx, ny) {

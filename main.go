@@ -7,6 +7,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"io/fs"
 	"log"
@@ -47,9 +51,19 @@ type imageEntry struct {
 }
 
 type labelPayload struct {
-	LabelsDir string `json:"labelsDir"`
-	File      string `json:"file"`
-	Content   string `json:"content"`
+	LabelsDir string    `json:"labelsDir"`
+	File      string    `json:"file"`
+	Content   string    `json:"content"`
+	ImagesDir string    `json:"imagesDir"`
+	ImageFile string    `json:"imageFile"`
+	Crop      *cropRect `json:"crop"`
+}
+
+type cropRect struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
 }
 
 type deletePayload struct {
@@ -403,6 +417,9 @@ func handleImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported image type", http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	if ct := mime.TypeByExtension(filepath.Ext(fullPath)); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
@@ -453,6 +470,8 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	payload.LabelsDir = strings.TrimSpace(payload.LabelsDir)
 	payload.File = strings.TrimSpace(payload.File)
+	payload.ImagesDir = strings.TrimSpace(payload.ImagesDir)
+	payload.ImageFile = strings.TrimSpace(payload.ImageFile)
 	if payload.LabelsDir == "" || payload.File == "" {
 		http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
 		return
@@ -460,6 +479,16 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasSuffix(strings.ToLower(payload.File), ".txt") {
 		http.Error(w, "labels must be .txt", http.StatusBadRequest)
 		return
+	}
+	if payload.Crop != nil {
+		if payload.ImagesDir == "" || payload.ImageFile == "" {
+			http.Error(w, "imagesDir and imageFile are required for crop", http.StatusBadRequest)
+			return
+		}
+		if err := cropImageFile(payload.ImagesDir, payload.ImageFile, *payload.Crop); err != nil {
+			http.Error(w, fmt.Sprintf("unable to crop image: %v", err), http.StatusBadRequest)
+			return
+		}
 	}
 	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
 	if err != nil {
@@ -476,6 +505,71 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("Updated %s", payload.File)
 	w.WriteHeader(http.StatusOK)
+}
+
+func cropImageFile(imagesDir, imageFile string, crop cropRect) error {
+	if crop.W <= 0 || crop.H <= 0 {
+		return errors.New("crop width/height must be > 0")
+	}
+	fullPath, err := safeJoin(imagesDir, imageFile)
+	if err != nil {
+		return err
+	}
+	ext := strings.ToLower(filepath.Ext(fullPath))
+	if !isImageExt(ext) {
+		return errors.New("unsupported image type")
+	}
+	srcFile, err := os.Open(fullPath)
+	if err != nil {
+		return err
+	}
+	img, _, err := image.Decode(srcFile)
+	if err != nil {
+		_ = srcFile.Close()
+		return err
+	}
+	if err := srcFile.Close(); err != nil {
+		return err
+	}
+	bounds := img.Bounds()
+	if crop.X < 0 || crop.Y < 0 || crop.X+crop.W > bounds.Dx() || crop.Y+crop.H > bounds.Dy() {
+		return errors.New("crop rectangle out of bounds")
+	}
+	srcRect := image.Rect(crop.X, crop.Y, crop.X+crop.W, crop.Y+crop.H)
+	dst := image.NewRGBA(image.Rect(0, 0, crop.W, crop.H))
+	draw.Draw(dst, dst.Bounds(), img, srcRect.Min, draw.Src)
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(fullPath), "goannotate-crop-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmpFile.Name()
+	var encodeErr error
+	switch ext {
+	case ".jpg", ".jpeg":
+		encodeErr = jpeg.Encode(tmpFile, dst, &jpeg.Options{Quality: 95})
+	case ".png":
+		encodeErr = png.Encode(tmpFile, dst)
+	default:
+		encodeErr = errors.New("crop supports only jpg and png")
+	}
+	if encodeErr != nil {
+		_ = os.Remove(tmpName)
+		return encodeErr
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, fullPath); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func handleDeleteImage(w http.ResponseWriter, r *http.Request) {

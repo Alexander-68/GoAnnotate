@@ -29,6 +29,8 @@ Download executable from Releases. No installation is required. Single file. Try
 - Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
+- Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame.
+- Crop save supports JPEG/PNG images; other formats report a save error.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Mark the current image review status as Done after edits are saved.
 - Track review status per image (TODO/Done) in `labelsDir/review_status.json`; missing or empty means everything is TODO.
@@ -77,6 +79,8 @@ Mouse
 - Left drag: Move the selected keypoint (positions magnifier).
 - Left drag on empty space or bbox: Pan the view (positions magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged; does not reposition the magnifier).
+- Alt + left drag: Define or replace a crop area (applied on save when switching images).
+- Drag crop corners: Resize the crop area.
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
 - `Ctrl` + left click: Add a new keypoint to the selected object. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
