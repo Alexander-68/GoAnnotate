@@ -46,6 +46,7 @@ const markFolderDoneBtn = document.getElementById("markFolderDoneBtn");
 const markFolderTodoBtn = document.getElementById("markFolderTodoBtn");
 const markCancelBtn = document.getElementById("markCancelBtn");
 const cropAspect11Btn = document.getElementById("cropAspect11Btn");
+const cropAspect12Btn = document.getElementById("cropAspect12Btn");
 const cropAspect23Btn = document.getElementById("cropAspect23Btn");
 const cropAspect34Btn = document.getElementById("cropAspect34Btn");
 const cropAspect169Btn = document.getElementById("cropAspect169Btn");
@@ -596,6 +597,12 @@ function init() {
       applyAspectCrop(1, 1);
     });
   }
+  if (cropAspect12Btn) {
+    cropAspect12Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(1, 2);
+    });
+  }
   if (cropAspect23Btn) {
     cropAspect23Btn.addEventListener("click", () => {
       closeCropModal();
@@ -759,6 +766,8 @@ function closePicker() {
 }
 
 async function navigatePicker(targetPath) {
+  let bitmap = null;
+  let bitmapAttached = false;
   try {
     let url = "/api/browse";
     if (targetPath === "..") {
@@ -1098,10 +1107,11 @@ async function loadImage(index, options = {}) {
       return;
     }
 
-    const bitmap = await createImageBitmap(blob);
+    bitmap = await createImageBitmap(blob);
 
     if (loadRequestId !== currentRequestId) {
       bitmap.close();
+      bitmap = null;
       return;
     }
 
@@ -1111,13 +1121,14 @@ async function loadImage(index, options = {}) {
     
     if (loadRequestId !== currentRequestId) {
       bitmap.close();
+      bitmap = null;
       return;
     }
 
-    let labelText = "";
-    if (labelResponse.ok) {
-      labelText = await labelResponse.text();
+    if (!labelResponse.ok) {
+      throw new Error("Unable to load labels");
     }
+    const labelText = await labelResponse.text();
     const annotations = parseLabels(labelText);
     const keypointCount = inferKeypointCount(annotations, state.keypointCount);
 
@@ -1128,6 +1139,7 @@ async function loadImage(index, options = {}) {
     state.index = index;
     state.imageName = entry.name;
     state.imageBitmap = bitmap;
+    bitmapAttached = true;
     state.imageWidth = bitmap.width;
     state.imageHeight = bitmap.height;
     state.annotations = annotations;
@@ -1221,6 +1233,9 @@ async function loadImage(index, options = {}) {
         setStatus(`Error: ${error.message}`);
     }
   } finally {
+    if (bitmap && !bitmapAttached) {
+      bitmap.close();
+    }
     if (loadRequestId === currentRequestId) {
         state.loadingImage = false;
         state.pendingIndex = null;

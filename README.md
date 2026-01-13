@@ -32,7 +32,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
 - Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame; original image/label files are archived in the `deleted` subfolders.
-- Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 2:3, 3:4, 16:9) and automatic orientation.
+- Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 1:2, 2:3, 3:4, 16:9) and automatic orientation.
 - Crop save supports JPEG/PNG images; other formats report a save error.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Mark the current image review status as Done after edits are saved.
@@ -117,7 +117,7 @@ UI
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected (image/label deletion archives originals in `deleted` subfolders).
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
-- The `Crop` button below `Mark` opens aspect choices to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
+- The `Crop` button below `Mark` opens aspect choices (1:1, 1:2, 2:3, 3:4, 16:9) to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
 - Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
@@ -140,7 +140,7 @@ By default, the server listens on `127.0.0.1:8080`. You can configure the addres
 go run . -ip 0.0.0.0 -port 9090
 ```
 
-To restrict directory browsing to a specific path (e.g., for security or convenience), use the `-data-root` flag:
+To restrict all file access (browse/list/read/write/delete/review status) to a specific path, use the `-data-root` flag:
 
 ```bash
 go run . -data-root C:\my\data\folder

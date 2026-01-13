@@ -99,7 +99,7 @@
             <div class="key-item"><span>Shift + Drag Corner</span> <span>Lock Aspect Ratio (BBox/Crop)</span></div>
             <div class="key-item"><span>Alt + Drag</span> <span>Define Crop Area</span></div>
             <div class="key-item"><span>Crop Corner</span> <span>Resize Crop</span></div>
-            <div class="key-item"><span>Crop Button</span> <span>Auto-fit crop to annotations by aspect (up to 10% padding)</span></div>
+            <div class="key-item"><span>Crop Button</span> <span>Auto-fit crop by aspect (1:1, 1:2, 2:3, 3:4, 16:9) with up to 10% padding</span></div>
             <div class="key-item"><span>Del Button</span> <span>Delete selection / open delete menu</span></div>
         </div>
         <p class="modal-desc" style="font-size: 14px; margin-top: 4px;">
@@ -164,10 +164,11 @@
         <button class="modal-close" type="button" data-close="true">X</button>
       </div>
       <div class="modal-body">
-        <p class="modal-desc">Auto-fit a crop around all annotations with up to 10% padding (reduced near borders). Choose an aspect ratio.</p>
+        <p class="modal-desc">Auto-fit a crop around all annotations with up to 10% padding (reduced near borders). Choose an aspect ratio (1:1, 1:2, 2:3, 3:4, 16:9).</p>
       </div>
       <div class="modal-actions">
         <button id="cropAspect11Btn" class="btn ghost" type="button">1:1</button>
+        <button id="cropAspect12Btn" class="btn ghost" type="button">1:2</button>
         <button id="cropAspect23Btn" class="btn ghost" type="button">2:3</button>
         <button id="cropAspect34Btn" class="btn ghost" type="button">3:4</button>
         <button id="cropAspect169Btn" class="btn" type="button">16:9</button>
