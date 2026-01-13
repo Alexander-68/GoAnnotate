@@ -3202,12 +3202,12 @@ async function deleteCurrentImageAndLabels() {
       state.annotations = [];
       state.baseAnnotations = [];
       updateImageNav();
-      setStatus(`Deleted ${deletedName}. No images left.`);
+      setStatus(`Deleted ${deletedName} (archived). No images left.`);
       return;
     }
     const nextIndex = Math.min(removedIndex, state.images.length - 1);
     await changeImage(nextIndex);
-    setStatus(`Deleted ${deletedName}`);
+    setStatus(`Deleted ${deletedName} (archived).`);
   } catch (error) {
     setStatus(`Delete error: ${error.message}`);
   }

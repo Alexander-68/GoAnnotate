@@ -103,7 +103,7 @@
             <div class="key-item"><span>Del Button</span> <span>Delete selection / open delete menu</span></div>
         </div>
         <p class="modal-desc" style="font-size: 14px; margin-top: 4px;">
-            <strong>Crop Save:</strong> Cropping is applied when the image saves during navigation; annotations are remapped to the cropped frame (JPEG/PNG only).
+            <strong>Crop Save:</strong> Cropping is applied when the image saves during navigation; annotations are remapped to the cropped frame (JPEG/PNG only) and originals move to `deleted` subfolders.
         </p>
         
         <div class="modal-section-title">Magnifier</div>
@@ -128,7 +128,7 @@
       </div>
       <div class="modal-body">
         <p class="modal-desc">Nothing is selected. Choose what to delete.</p>
-        <p class="modal-desc">Deleting the image also deletes its matching label file.</p>
+        <p class="modal-desc">Deleting the image moves it and its matching label file into `deleted` subfolders.</p>
       </div>
       <div class="modal-actions">
         <button id="deleteAnnotationsBtn" class="btn ghost" type="button">Delete All Annotations</button>

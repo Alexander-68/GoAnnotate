@@ -489,6 +489,12 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("unable to crop image: %v", err), http.StatusBadRequest)
 			return
 		}
+		if _, moved, err := moveFileToDeleted(payload.LabelsDir, payload.File); err != nil {
+			http.Error(w, "unable to archive label before crop save", http.StatusInternalServerError)
+			return
+		} else if moved {
+			log.Printf("Archived label=%q for crop", payload.File)
+		}
 	}
 	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
 	if err != nil {
@@ -561,13 +567,20 @@ func cropImageFile(imagesDir, imageFile string, crop cropRect) error {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	movedPath, moved, err := moveFileToDeleted(imagesDir, imageFile)
+	if err != nil {
 		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := os.Rename(tmpName, fullPath); err != nil {
 		_ = os.Remove(tmpName)
+		if moved {
+			_ = os.Rename(movedPath, fullPath)
+		}
 		return err
+	}
+	if moved {
+		log.Printf("Archived image=%q for crop", imageFile)
 	}
 	return nil
 }
@@ -603,33 +616,24 @@ func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := deleteResponse{}
-	if err := os.Remove(imagePath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			http.Error(w, "unable to delete image", http.StatusInternalServerError)
-			return
-		}
-	} else {
+	if _, moved, err := moveFileToDeleted(payload.ImagesDir, payload.File); err != nil {
+		http.Error(w, "unable to delete image", http.StatusInternalServerError)
+		return
+	} else if moved {
 		result.DeletedImage = true
 	}
 
 	if payload.LabelsDir != "" {
 		labelName := trimExt(payload.File) + ".txt"
-		labelPath, err := safeJoin(payload.LabelsDir, labelName)
-		if err != nil {
-			http.Error(w, "invalid label path", http.StatusBadRequest)
+		if _, moved, err := moveFileToDeleted(payload.LabelsDir, labelName); err != nil {
+			http.Error(w, "unable to delete label", http.StatusInternalServerError)
 			return
-		}
-		if err := os.Remove(labelPath); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				http.Error(w, "unable to delete label", http.StatusInternalServerError)
-				return
-			}
-		} else {
+		} else if moved {
 			result.DeletedLabel = true
 		}
 	}
 
-	log.Printf("Deleted image=%q label=%t", payload.File, result.DeletedLabel)
+	log.Printf("Deleted image=%q label=%t (archived)", payload.File, result.DeletedLabel)
 	writeJSON(w, result)
 }
 
@@ -743,6 +747,63 @@ func isImageExt(ext string) bool {
 	default:
 		return false
 	}
+}
+
+func moveFileToDeleted(baseDir, relPath string) (string, bool, error) {
+	srcPath, err := safeJoin(baseDir, relPath)
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	deletedRel := filepath.Join("deleted", relPath)
+	dstPath, err := safeJoin(baseDir, deletedRel)
+	if err != nil {
+		return "", false, err
+	}
+	uniquePath, err := uniqueDeletedPath(dstPath)
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(uniquePath), 0o755); err != nil {
+		return "", false, err
+	}
+	if err := os.Rename(srcPath, uniquePath); err != nil {
+		return "", false, err
+	}
+	return uniquePath, true, nil
+}
+
+func uniqueDeletedPath(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return path, nil
+		}
+		return "", err
+	}
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	stamp := time.Now().Format("20060102-150405")
+	for i := 1; i <= 9999; i++ {
+		suffix := fmt.Sprintf("%s-%s", name, stamp)
+		if i > 1 {
+			suffix = fmt.Sprintf("%s-%s-%d", name, stamp, i)
+		}
+		candidate := filepath.Join(dir, suffix+ext)
+		if _, err := os.Stat(candidate); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return candidate, nil
+			}
+			return "", err
+		}
+	}
+	return "", errors.New("unable to allocate deleted filename")
 }
 
 func safeJoin(baseDir, rel string) (string, error) {

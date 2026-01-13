@@ -27,11 +27,11 @@ Download executable from Releases. No installation is required. Single file. Try
 - Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Automatically center the magnifier on the corresponding keypoint of the first person (class 0) when switching images; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
-- Delete the selected keypoint or object, or open a delete menu to clear all annotations or delete the current image and label file.
+- Delete the selected keypoint or object, or open a delete menu to clear all annotations or move the current image and label file into `imagesDir/deleted` and `labelsDir/deleted`.
 - Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
-- Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame.
+- Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame; original image/label files are archived in the `deleted` subfolders.
 - Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 2:3, 3:4, 16:9) and automatic orientation.
 - Crop save supports JPEG/PNG images; other formats report a save error.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
@@ -114,7 +114,7 @@ UI
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
 - The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
-- The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
+- The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected (image/label deletion archives originals in `deleted` subfolders).
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
 - The `Crop` button below `Mark` opens aspect choices to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
