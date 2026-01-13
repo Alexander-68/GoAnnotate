@@ -52,6 +52,7 @@ const cropAspect169Btn = document.getElementById("cropAspect169Btn");
 const cropCancelBtn = document.getElementById("cropCancelBtn");
 
 let loadRequestId = 0;
+let loadAbortController = null;
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
 let pickerSelectedPath = "";
@@ -1061,6 +1062,13 @@ async function loadImage(index, options = {}) {
   if (index < 0 || index >= state.images.length) {
     return;
   }
+  
+  if (loadAbortController) {
+    loadAbortController.abort();
+  }
+  loadAbortController = new AbortController();
+  const signal = loadAbortController.signal;
+
   const currentRequestId = ++loadRequestId;
 
   const preserveView = options && options.preserveView;
@@ -1080,22 +1088,29 @@ async function loadImage(index, options = {}) {
   try {
     const version = state.imageVersions[entry.name] || 0;
     const imageUrl = `/api/image?imagesDir=${encodeURIComponent(state.imagesDir)}&file=${encodeURIComponent(entry.name)}&v=${version}`;
-    const imageResponse = await fetch(imageUrl);
+    const imageResponse = await fetch(imageUrl, { signal });
     if (!imageResponse.ok) {
       throw new Error("Unable to load image");
     }
     const blob = await imageResponse.blob();
+    
+    if (loadRequestId !== currentRequestId) {
+      return;
+    }
+
     const bitmap = await createImageBitmap(blob);
 
     if (loadRequestId !== currentRequestId) {
+      bitmap.close();
       return;
     }
 
     const labelName = `${stripExt(entry.name)}.txt`;
     const labelUrl = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
-    const labelResponse = await fetch(labelUrl);
+    const labelResponse = await fetch(labelUrl, { signal });
     
     if (loadRequestId !== currentRequestId) {
+      bitmap.close();
       return;
     }
 
@@ -1105,6 +1120,10 @@ async function loadImage(index, options = {}) {
     }
     const annotations = parseLabels(labelText);
     const keypointCount = inferKeypointCount(annotations, state.keypointCount);
+
+    if (state.imageBitmap) {
+        state.imageBitmap.close();
+    }
 
     state.index = index;
     state.imageName = entry.name;
@@ -1195,6 +1214,9 @@ async function loadImage(index, options = {}) {
     state.cachedMagnifierState = null;
 
   } catch (error) {
+    if (error.name === "AbortError") {
+        return;
+    }
     if (loadRequestId === currentRequestId) {
         setStatus(`Error: ${error.message}`);
     }
