@@ -15,7 +15,7 @@ Download executable from Releases. No installation is required. Single file. Try
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
-- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), and selected object size.
+- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
 - Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
@@ -32,11 +32,12 @@ Download executable from Releases. No installation is required. Single file. Try
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
 - Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame.
+- Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 2:3, 3:4, 16:9) and automatic orientation.
 - Crop save supports JPEG/PNG images; other formats report a save error.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Mark the current image review status as Done after edits are saved.
 - Track review status per image (TODO/Done) in `labelsDir/review_status.json`; missing or empty means everything is TODO.
-- Allow undo per image and clear undo history when switching images.
+- Allow undo per image (up to 512 actions) and clear undo history when switching images.
 - Preserve the current pan/zoom and magnifier state when switching images.
 - Keep the previous frame visible while loading the next image to avoid blank flashes during navigation.
 - Use a full-screen canvas with overlay OSD, top-right Load/Help buttons, and bottom-left Prev / bottom-right Next buttons for image navigation.
@@ -65,7 +66,7 @@ Keyboard
 - `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
-- `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
+- `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image, up to 512 actions).
 - `Ctrl` + `D`: Mark the current image as Done (auto-advance to next TODO).
 - `Ctrl` + `A`: Mark the current image as TODO (auto-advance to next TODO).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
@@ -81,6 +82,7 @@ Mouse
 - Left drag: Move the selected keypoint (positions magnifier).
 - Left drag on empty space or bbox: Pan the view (positions magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged; does not reposition the magnifier).
+- Shift + drag a bbox or crop corner: Resize while maintaining the original aspect ratio.
 - Alt + left drag: Define or replace a crop area (applied on save when switching images).
 - Drag crop corners: Resize the crop area.
 - `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
@@ -113,11 +115,12 @@ UI
 - The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
-- The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`).
+- The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
+- The `Crop` button below `Mark` opens aspect choices to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
 - Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
-- Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
+- Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
