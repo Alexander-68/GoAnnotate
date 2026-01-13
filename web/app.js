@@ -2100,31 +2100,13 @@ function onMouseDown(event) {
   }
 
   if (event.ctrlKey) {
-    if (state.selection.objectIndex < 0) {
-      state.dragging.mode = "newBBox";
-      state.dragging.startWorldX = worldX;
-      state.dragging.startWorldY = worldY;
-      state.dragging.currentWorldX = worldX;
-      state.dragging.currentWorldY = worldY;
-      // Also latch start for consistency
-      state.dragging.startX = event.clientX;
-      state.dragging.startY = event.clientY;
-      return;
-    }
-    const addedIndex = addKeypointAt(state.selection.objectIndex, worldX, worldY);
-    if (addedIndex >= 0) {
-      state.dragging.mode = "keypoint";
-      state.dragging.startWorldX = worldX;
-      state.dragging.startWorldY = worldY;
-      state.dragging.snapshotTaken = true;
-      state.dragging.startX = event.clientX;
-      state.dragging.startY = event.clientY;
-      state.magnifier.active = true;
-      if (!isMagnifier) {
-        state.magnifier.x = worldX;
-        state.magnifier.y = worldY;
-      }
-    }
+    state.dragging.mode = "ctrlPending";
+    state.dragging.startWorldX = worldX;
+    state.dragging.startWorldY = worldY;
+    state.dragging.currentWorldX = worldX;
+    state.dragging.currentWorldY = worldY;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
@@ -2230,6 +2212,15 @@ function onMouseMove(event) {
         state.view.offsetY = state.dragging.startOffsetY + dy;
     }
     return;
+  }
+
+  if (state.dragging.mode === "ctrlPending") {
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
+    if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+      return;
+    }
+    state.dragging.mode = "newBBox";
   }
 
   if (state.dragging.mode === "newBBox") {
@@ -2372,6 +2363,25 @@ function onMouseUp(event) {
   }
   if (state.dragging.mode === "newBBox") {
     finishNewBBox(event);
+    state.dragging.mode = null;
+    return;
+  }
+  if (state.dragging.mode === "ctrlPending") {
+    const pos = getPointerState(event, state.dragging.isMagnifier);
+    if (state.selection.objectIndex >= 0) {
+      const addedIndex = addKeypointAt(
+        state.selection.objectIndex,
+        pos.worldX,
+        pos.worldY
+      );
+      if (addedIndex >= 0) {
+        state.magnifier.active = true;
+        if (!state.dragging.isMagnifier) {
+          state.magnifier.x = pos.worldX;
+          state.magnifier.y = pos.worldY;
+        }
+      }
+    }
     state.dragging.mode = null;
     return;
   }

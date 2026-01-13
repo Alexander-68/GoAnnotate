@@ -86,8 +86,8 @@ Mouse
 - Shift + drag a bbox or crop corner: Resize while maintaining the original aspect ratio.
 - Alt + left drag: Define or replace a crop area (applied on save when switching images).
 - Drag crop corners: Resize the crop area.
-- `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
-- `Ctrl` + left click: Add a new keypoint to the selected object. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
+- `Ctrl` + left drag: Create a new bounding box (uses the last selected class ID or 0).
+- `Ctrl` + left click (no drag): Add a new keypoint to the selected object on release. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
