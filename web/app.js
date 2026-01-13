@@ -29,6 +29,8 @@ const pickerTitle = document.getElementById("pickerTitle");
 const pickerCancelBtn = document.getElementById("pickerCancelBtn");
 const pickerSelectBtn = document.getElementById("pickerSelectBtn");
 const osdEl = document.getElementById("osd");
+const osdTextEl = document.getElementById("osdText");
+const osdMinimizeBtn = document.getElementById("osdMinimize");
 const labelsSection = document.getElementById("labelsSection");
 const magnifier = document.getElementById("magnifier");
 const magnifierCanvas = document.getElementById("magnifierCanvas");
@@ -342,6 +344,7 @@ const state = {
   modifiedSinceLoad: false,
   undoStack: [],
   osdCache: "",
+  osdMinimized: false,
   statusText: "Idle",
   loadingImage: false,
   pendingIndex: null,
@@ -495,6 +498,13 @@ function init() {
       setMagnifierMinimized(!state.magnifier.minimized);
     });
   }
+  if (osdMinimizeBtn) {
+    osdMinimizeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setOsdMinimized(!state.osdMinimized);
+    });
+  }
 
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
@@ -635,6 +645,8 @@ function init() {
   openModal();
   updateImageNav();
   updateMagnifierMinimizeButton();
+  updateOsdMinimizeButton();
+  updateOsd();
   requestAnimationFrame(render);
 }
 
@@ -1703,14 +1715,39 @@ function drawHoverLabel() {
   ctx.restore();
 }
 
+function buildOsdSummaryLine() {
+  const totalFiles = state.images.length;
+  const fileIndex = totalFiles > 0 ? state.index + 1 : 0;
+  const totalObjects = state.annotations.length;
+  const base = `File ${fileIndex}/${totalFiles}`;
+  const objIndex = state.selection.objectIndex;
+  const obj = state.annotations[objIndex];
+  if (!obj) {
+    return `${base} Objs ${totalObjects}`;
+  }
+  let suffix = `Obj ${objIndex}/${totalObjects}`;
+  if (obj.hasPose) {
+    const totalKpts = obj.keypoints.length;
+    if (state.selection.keypointIndex >= 0 && totalKpts > 0) {
+      const kpIndex = Math.min(state.selection.keypointIndex, totalKpts - 1);
+      suffix += ` Kpt ${kpIndex}/${totalKpts}`;
+    } else {
+      suffix += ` Kpts ${totalKpts}`;
+    }
+  } else {
+    suffix += " Kpts 0";
+  }
+  return `${base} ${suffix}`;
+}
+
 function updateOsd() {
-  if (!osdEl) {
+  if (!osdEl || !osdTextEl) {
     return;
   }
-  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
-  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
+  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";    
+  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);   
   const countLine = state.images.length
-    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
+    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`     
     : "Index: 0/0 TODO: 0";
   const resLine = state.imageWidth && state.imageHeight
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
@@ -1746,11 +1783,12 @@ function updateOsd() {
     ...objectsLines,
     ...selectedLines
   ];
-  const text = lines.join("\n");
+  const text = state.osdMinimized ? buildOsdSummaryLine() : lines.join("\n");
   if (text !== state.osdCache) {
-    osdEl.textContent = text;
+    osdTextEl.textContent = text;
     state.osdCache = text;
   }
+  osdEl.classList.toggle("minimized", state.osdMinimized);
 }
 
 function updateImageNav() {
@@ -4302,8 +4340,30 @@ function getOsdLineHeight() {
   return 18;
 }
 
+function updateOsdMinimizeButton() {
+  if (!osdMinimizeBtn) {
+    return;
+  }
+  if (state.osdMinimized) {
+    osdMinimizeBtn.textContent = "+";
+    osdMinimizeBtn.title = "Restore status panel";
+    osdMinimizeBtn.setAttribute("aria-label", "Restore status panel");
+  } else {
+    osdMinimizeBtn.textContent = "-";
+    osdMinimizeBtn.title = "Minimize status panel";
+    osdMinimizeBtn.setAttribute("aria-label", "Minimize status panel");
+  }
+}
+
+function setOsdMinimized(next) {
+  state.osdMinimized = next;
+  updateOsdMinimizeButton();
+  state.osdCache = "";
+  updateOsd();
+}
+
 function ensureMagnifierAnchor() {
-  if (!Number.isFinite(state.magnifier.width) || state.magnifier.width <= 0) {
+  if (!Number.isFinite(state.magnifier.width) || state.magnifier.width <= 0) {  
     state.magnifier.width = MAGNIFIER_DEFAULT_WIDTH;
   }
   if (!Number.isFinite(state.magnifier.height) || state.magnifier.height <= 0) {

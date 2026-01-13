@@ -19,7 +19,10 @@
         <button id="markBtn" class="btn ghost" type="button">Mark</button>
         <button id="cropBtn" class="btn ghost" type="button">Crop</button>
       </div>
-      <div class="osd" id="osd"></div>
+      <div class="osd" id="osd">
+        <button id="osdMinimize" class="magnifier-handle magnifier-handle-minimize osd-minimize" type="button" title="Minimize status panel" aria-label="Minimize status panel">-</button>
+        <div class="osd-text" id="osdText"></div>
+      </div>
       <div class="image-nav" aria-label="Image navigation">
         <button id="prevImageBtn" class="btn ghost nav-btn" type="button" title="Previous image (Left Arrow)" aria-label="Previous image">Prev</button>
         <button id="nextImageBtn" class="btn ghost nav-btn" type="button" title="Next image (Right Arrow)" aria-label="Next image">Next</button>
@@ -81,7 +84,7 @@
         <div class="keys-grid">
             <div class="key-item"><span>Wheel</span> <span>Zoom</span></div>
             <div class="key-item"><span>Right Drag</span> <span>Pan</span></div>
-            <div class="key-item"><span>Status Panel</span> <span>Shows crop size (px) when active</span></div>
+            <div class="key-item"><span>Status Panel</span> <span>Shows crop size (px), click top-right anchor to minimize</span></div>
             <div class="key-item"><span>Keypoints</span> <span>1px Contrast Halo</span></div>
             <div class="key-item"><span>V</span> <span>Cycle Visibility</span></div>
             <div class="key-item"><span>B</span> <span>Color Schemes</span></div>
