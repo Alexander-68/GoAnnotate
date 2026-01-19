@@ -9,11 +9,13 @@ const openHelpBtn = document.getElementById("openHelpBtn");
 const deleteBtn = document.getElementById("deleteBtn");
 const undoBtn = document.getElementById("undoBtn");
 const markBtn = document.getElementById("markBtn");
+const cropBtn = document.getElementById("cropBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
 const deleteModal = document.getElementById("deleteModal");
 const markModal = document.getElementById("markModal");
+const cropModal = document.getElementById("cropModal");
 const prevImageBtn = document.getElementById("prevImageBtn");
 const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
@@ -27,6 +29,8 @@ const pickerTitle = document.getElementById("pickerTitle");
 const pickerCancelBtn = document.getElementById("pickerCancelBtn");
 const pickerSelectBtn = document.getElementById("pickerSelectBtn");
 const osdEl = document.getElementById("osd");
+const osdTextEl = document.getElementById("osdText");
+const osdMinimizeBtn = document.getElementById("osdMinimize");
 const labelsSection = document.getElementById("labelsSection");
 const magnifier = document.getElementById("magnifier");
 const magnifierCanvas = document.getElementById("magnifierCanvas");
@@ -43,14 +47,21 @@ const markCurrentTodoBtn = document.getElementById("markCurrentTodoBtn");
 const markFolderDoneBtn = document.getElementById("markFolderDoneBtn");
 const markFolderTodoBtn = document.getElementById("markFolderTodoBtn");
 const markCancelBtn = document.getElementById("markCancelBtn");
+const cropAspect11Btn = document.getElementById("cropAspect11Btn");
+const cropAspect12Btn = document.getElementById("cropAspect12Btn");
+const cropAspect23Btn = document.getElementById("cropAspect23Btn");
+const cropAspect34Btn = document.getElementById("cropAspect34Btn");
+const cropAspect169Btn = document.getElementById("cropAspect169Btn");
+const cropCancelBtn = document.getElementById("cropCancelBtn");
 
 let loadRequestId = 0;
+let loadAbortController = null;
 let pickerActiveTarget = null;
 let pickerCurrentPathVal = "";
 let pickerSelectedPath = "";
 
 const MAX_RECENTS = 10;
-const MAX_UNDO = 50;
+const MAX_UNDO = 512;
 
 const DEFAULT_KPT_COUNT = (typeof Labels !== "undefined" && Number.isFinite(Labels.DEFAULT_KPT_COUNT))
   ? Labels.DEFAULT_KPT_COUNT
@@ -333,6 +344,7 @@ const state = {
   modifiedSinceLoad: false,
   undoStack: [],
   osdCache: "",
+  osdMinimized: false,
   statusText: "Idle",
   loadingImage: false,
   pendingIndex: null,
@@ -374,6 +386,11 @@ function init() {
   if (markBtn) {
     markBtn.addEventListener("click", () => {
       openMarkModal();
+    });
+  }
+  if (cropBtn) {
+    cropBtn.addEventListener("click", () => {
+      openCropModal();
     });
   }
 
@@ -481,6 +498,13 @@ function init() {
       setMagnifierMinimized(!state.magnifier.minimized);
     });
   }
+  if (osdMinimizeBtn) {
+    osdMinimizeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setOsdMinimized(!state.osdMinimized);
+    });
+  }
 
   loadModal.addEventListener("click", (event) => {
     const target = event.target;
@@ -514,6 +538,14 @@ function init() {
       }
     });
   }
+  if (cropModal) {
+    cropModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.close) {
+        closeCropModal();
+      }
+    });
+  }
 
   if (deleteCancelBtn) {
     deleteCancelBtn.addEventListener("click", () => {
@@ -523,6 +555,11 @@ function init() {
   if (markCancelBtn) {
     markCancelBtn.addEventListener("click", () => {
       closeMarkModal();
+    });
+  }
+  if (cropCancelBtn) {
+    cropCancelBtn.addEventListener("click", () => {
+      closeCropModal();
     });
   }
 
@@ -564,6 +601,36 @@ function init() {
       await markFolderReviewStatus("TODO");
     });
   }
+  if (cropAspect11Btn) {
+    cropAspect11Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(1, 1);
+    });
+  }
+  if (cropAspect12Btn) {
+    cropAspect12Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(1, 2);
+    });
+  }
+  if (cropAspect23Btn) {
+    cropAspect23Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(2, 3);
+    });
+  }
+  if (cropAspect34Btn) {
+    cropAspect34Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(3, 4);
+    });
+  }
+  if (cropAspect169Btn) {
+    cropAspect169Btn.addEventListener("click", () => {
+      closeCropModal();
+      applyAspectCrop(16, 9);
+    });
+  }
 
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -578,6 +645,8 @@ function init() {
   openModal();
   updateImageNav();
   updateMagnifierMinimizeButton();
+  updateOsdMinimizeButton();
+  updateOsd();
   requestAnimationFrame(render);
 }
 
@@ -633,6 +702,18 @@ function openMarkModal() {
   markModal.setAttribute("aria-hidden", "false");
 }
 
+function openCropModal() {
+  if (!cropModal) {
+    return;
+  }
+  if (!state.images.length) {
+    setStatus("No images loaded.");
+    return;
+  }
+  cropModal.classList.remove("hidden");
+  cropModal.setAttribute("aria-hidden", "false");
+}
+
 function closeDeleteModal() {
   if (!deleteModal) {
     return;
@@ -647,6 +728,14 @@ function closeMarkModal() {
   }
   markModal.classList.add("hidden");
   markModal.setAttribute("aria-hidden", "true");
+}
+
+function closeCropModal() {
+  if (!cropModal) {
+    return;
+  }
+  cropModal.classList.add("hidden");
+  cropModal.setAttribute("aria-hidden", "true");
 }
 
 async function openPicker(target, title) {
@@ -689,6 +778,8 @@ function closePicker() {
 }
 
 async function navigatePicker(targetPath) {
+  let bitmap = null;
+  let bitmapAttached = false;
   try {
     let url = "/api/browse";
     if (targetPath === "..") {
@@ -992,6 +1083,13 @@ async function loadImage(index, options = {}) {
   if (index < 0 || index >= state.images.length) {
     return;
   }
+  
+  if (loadAbortController) {
+    loadAbortController.abort();
+  }
+  loadAbortController = new AbortController();
+  const signal = loadAbortController.signal;
+
   const currentRequestId = ++loadRequestId;
 
   const preserveView = options && options.preserveView;
@@ -1011,35 +1109,49 @@ async function loadImage(index, options = {}) {
   try {
     const version = state.imageVersions[entry.name] || 0;
     const imageUrl = `/api/image?imagesDir=${encodeURIComponent(state.imagesDir)}&file=${encodeURIComponent(entry.name)}&v=${version}`;
-    const imageResponse = await fetch(imageUrl);
+    const imageResponse = await fetch(imageUrl, { signal });
     if (!imageResponse.ok) {
       throw new Error("Unable to load image");
     }
     const blob = await imageResponse.blob();
-    const bitmap = await createImageBitmap(blob);
-
-    if (loadRequestId !== currentRequestId) {
-      return;
-    }
-
-    const labelName = `${stripExt(entry.name)}.txt`;
-    const labelUrl = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
-    const labelResponse = await fetch(labelUrl);
     
     if (loadRequestId !== currentRequestId) {
       return;
     }
 
-    let labelText = "";
-    if (labelResponse.ok) {
-      labelText = await labelResponse.text();
+    bitmap = await createImageBitmap(blob);
+
+    if (loadRequestId !== currentRequestId) {
+      bitmap.close();
+      bitmap = null;
+      return;
     }
+
+    const labelName = `${stripExt(entry.name)}.txt`;
+    const labelUrl = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
+    const labelResponse = await fetch(labelUrl, { signal });
+    
+    if (loadRequestId !== currentRequestId) {
+      bitmap.close();
+      bitmap = null;
+      return;
+    }
+
+    if (!labelResponse.ok) {
+      throw new Error("Unable to load labels");
+    }
+    const labelText = await labelResponse.text();
     const annotations = parseLabels(labelText);
     const keypointCount = inferKeypointCount(annotations, state.keypointCount);
+
+    if (state.imageBitmap) {
+        state.imageBitmap.close();
+    }
 
     state.index = index;
     state.imageName = entry.name;
     state.imageBitmap = bitmap;
+    bitmapAttached = true;
     state.imageWidth = bitmap.width;
     state.imageHeight = bitmap.height;
     state.annotations = annotations;
@@ -1126,10 +1238,16 @@ async function loadImage(index, options = {}) {
     state.cachedMagnifierState = null;
 
   } catch (error) {
+    if (error.name === "AbortError") {
+        return;
+    }
     if (loadRequestId === currentRequestId) {
         setStatus(`Error: ${error.message}`);
     }
   } finally {
+    if (bitmap && !bitmapAttached) {
+      bitmap.close();
+    }
     if (loadRequestId === currentRequestId) {
         state.loadingImage = false;
         state.pendingIndex = null;
@@ -1597,18 +1715,52 @@ function drawHoverLabel() {
   ctx.restore();
 }
 
+function buildOsdSummaryLine() {
+  const totalFiles = state.images.length;
+  const fileIndex = totalFiles > 0 ? state.index + 1 : 0;
+  const totalObjects = state.annotations.length;
+  const base = `File ${fileIndex}/${totalFiles}`;
+  const objIndex = state.selection.objectIndex;
+  const obj = state.annotations[objIndex];
+  if (!obj) {
+    return `${base} Objs ${totalObjects}`;
+  }
+  let suffix = `Obj ${objIndex}/${totalObjects}`;
+  if (obj.hasPose) {
+    const totalKpts = obj.keypoints.length;
+    if (state.selection.keypointIndex >= 0 && totalKpts > 0) {
+      const kpIndex = Math.min(state.selection.keypointIndex, totalKpts - 1);
+      suffix += ` Kpt ${kpIndex}/${totalKpts}`;
+    } else {
+      suffix += ` Kpts ${totalKpts}`;
+    }
+  } else {
+    suffix += " Kpts 0";
+  }
+  return `${base} ${suffix}`;
+}
+
 function updateOsd() {
-  if (!osdEl) {
+  if (!osdEl || !osdTextEl) {
     return;
   }
-  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
-  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
+  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";    
+  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);   
   const countLine = state.images.length
-    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
+    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`     
     : "Index: 0/0 TODO: 0";
   const resLine = state.imageWidth && state.imageHeight
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
     : "Resolution: -";
+  let cropLine = "";
+  if (state.crop.active && state.crop.bbox && state.imageWidth && state.imageHeight) {
+    const cropPixels = cropToPixels(state.crop.bbox);
+    if (cropPixels) {
+      const cropW = Math.max(0, Math.round(cropPixels.w));
+      const cropH = Math.max(0, Math.round(cropPixels.h));
+      cropLine = `Crop: ${cropW}x${cropH}px`;
+    }
+  }
   
   let zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
   if (state.magnifier.active) {
@@ -1620,12 +1772,23 @@ function updateOsd() {
   const modLine = `Modified: ${state.modifiedSinceLoad ? "Yes" : "No"}, ${reviewStatus}`;
   const objectsLines = buildObjectLines();
   const selectedLines = buildSelectedLines();
-  const lines = [fileLine, countLine, resLine, zoomLine, statusLine, modLine, ...objectsLines, ...selectedLines];
-  const text = lines.join("\n");
+  const lines = [
+    fileLine,
+    countLine,
+    resLine,
+    ...(cropLine ? [cropLine] : []),
+    zoomLine,
+    statusLine,
+    modLine,
+    ...objectsLines,
+    ...selectedLines
+  ];
+  const text = state.osdMinimized ? buildOsdSummaryLine() : lines.join("\n");
   if (text !== state.osdCache) {
-    osdEl.textContent = text;
+    osdTextEl.textContent = text;
     state.osdCache = text;
   }
+  osdEl.classList.toggle("minimized", state.osdMinimized);
 }
 
 function updateImageNav() {
@@ -1937,31 +2100,13 @@ function onMouseDown(event) {
   }
 
   if (event.ctrlKey) {
-    if (state.selection.objectIndex < 0) {
-      state.dragging.mode = "newBBox";
-      state.dragging.startWorldX = worldX;
-      state.dragging.startWorldY = worldY;
-      state.dragging.currentWorldX = worldX;
-      state.dragging.currentWorldY = worldY;
-      // Also latch start for consistency
-      state.dragging.startX = event.clientX;
-      state.dragging.startY = event.clientY;
-      return;
-    }
-    const addedIndex = addKeypointAt(state.selection.objectIndex, worldX, worldY);
-    if (addedIndex >= 0) {
-      state.dragging.mode = "keypoint";
-      state.dragging.startWorldX = worldX;
-      state.dragging.startWorldY = worldY;
-      state.dragging.snapshotTaken = true;
-      state.dragging.startX = event.clientX;
-      state.dragging.startY = event.clientY;
-      state.magnifier.active = true;
-      if (!isMagnifier) {
-        state.magnifier.x = worldX;
-        state.magnifier.y = worldY;
-      }
-    }
+    state.dragging.mode = "ctrlPending";
+    state.dragging.startWorldX = worldX;
+    state.dragging.startWorldY = worldY;
+    state.dragging.currentWorldX = worldX;
+    state.dragging.currentWorldY = worldY;
+    state.dragging.startX = event.clientX;
+    state.dragging.startY = event.clientY;
     return;
   }
 
@@ -2069,6 +2214,15 @@ function onMouseMove(event) {
     return;
   }
 
+  if (state.dragging.mode === "ctrlPending") {
+    const dx = event.clientX - state.dragging.startX;
+    const dy = event.clientY - state.dragging.startY;
+    if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) {
+      return;
+    }
+    state.dragging.mode = "newBBox";
+  }
+
   if (state.dragging.mode === "newBBox") {
     state.dragging.currentWorldX = worldX;
     state.dragging.currentWorldY = worldY;
@@ -2093,7 +2247,13 @@ function onMouseMove(event) {
     ensureUndoSnapshot();
     const nx = clamp(worldX / state.imageWidth, 0, 1);
     const ny = clamp(worldY / state.imageHeight, 0, 1);
-    const updated = updateCorners(state.dragging.startCorners, state.dragging.cropCorner, nx, ny);
+    const updated = updateCorners(
+      state.dragging.startCorners,
+      state.dragging.cropCorner,
+      nx,
+      ny,
+      { keepAspect: event.shiftKey }
+    );
     const minX = clamp(Math.min(updated.x1, updated.x2), 0, 1);
     const maxX = clamp(Math.max(updated.x1, updated.x2), 0, 1);
     const minY = clamp(Math.min(updated.y1, updated.y2), 0, 1);
@@ -2144,7 +2304,13 @@ function onMouseMove(event) {
     const corners = state.dragging.startCorners;
     const nx = clamp(worldX / state.imageWidth, 0, 1);
     const ny = clamp(worldY / state.imageHeight, 0, 1);
-    const updated = updateCorners(corners, state.selection.corner, nx, ny);
+    const updated = updateCorners(
+      corners,
+      state.selection.corner,
+      nx,
+      ny,
+      { keepAspect: event.shiftKey }
+    );
     const minX = clamp(Math.min(updated.x1, updated.x2), 0, 1);
     const maxX = clamp(Math.max(updated.x1, updated.x2), 0, 1);
     const minY = clamp(Math.min(updated.y1, updated.y2), 0, 1);
@@ -2197,6 +2363,25 @@ function onMouseUp(event) {
   }
   if (state.dragging.mode === "newBBox") {
     finishNewBBox(event);
+    state.dragging.mode = null;
+    return;
+  }
+  if (state.dragging.mode === "ctrlPending") {
+    const pos = getPointerState(event, state.dragging.isMagnifier);
+    if (state.selection.objectIndex >= 0) {
+      const addedIndex = addKeypointAt(
+        state.selection.objectIndex,
+        pos.worldX,
+        pos.worldY
+      );
+      if (addedIndex >= 0) {
+        state.magnifier.active = true;
+        if (!state.dragging.isMagnifier) {
+          state.magnifier.x = pos.worldX;
+          state.magnifier.y = pos.worldY;
+        }
+      }
+    }
     state.dragging.mode = null;
     return;
   }
@@ -2614,6 +2799,10 @@ function onKeyDown(event) {
       closeMarkModal();
       return;
     }
+    if (cropModal && !cropModal.classList.contains("hidden")) {
+      closeCropModal();
+      return;
+    }
   }
   if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
     return;
@@ -2970,6 +3159,33 @@ function finishNewCrop(event) {
   markDirty();
 }
 
+function applyAspectCrop(widthRatio, heightRatio) {
+  if (!Number.isFinite(widthRatio) || !Number.isFinite(heightRatio) || heightRatio <= 0 || widthRatio <= 0) {
+    return;
+  }
+  if (!state.imageWidth || !state.imageHeight) {
+    return;
+  }
+  const bounds = getAnnotationBoundsPixels();
+  if (!bounds) {
+    return;
+  }
+  const aspect = widthRatio / heightRatio;
+  const cropRect = pickAspectCropRect(bounds, aspect, 0.1);
+  if (!cropRect) {
+    return;
+  }
+  pushUndo();
+  state.crop.bbox = {
+    cx: (cropRect.x + cropRect.w / 2) / state.imageWidth,
+    cy: (cropRect.y + cropRect.h / 2) / state.imageHeight,
+    w: Math.max(0.0001, cropRect.w / state.imageWidth),
+    h: Math.max(0.0001, cropRect.h / state.imageHeight)
+  };
+  state.crop.active = true;
+  markDirty();
+}
+
 function cycleVisibility() {
   const obj = state.annotations[state.selection.objectIndex];
   if (!obj) {
@@ -3071,12 +3287,12 @@ async function deleteCurrentImageAndLabels() {
       state.annotations = [];
       state.baseAnnotations = [];
       updateImageNav();
-      setStatus(`Deleted ${deletedName}. No images left.`);
+      setStatus(`Deleted ${deletedName} (archived). No images left.`);
       return;
     }
     const nextIndex = Math.min(removedIndex, state.images.length - 1);
     await changeImage(nextIndex);
-    setStatus(`Deleted ${deletedName}`);
+    setStatus(`Deleted ${deletedName} (archived).`);
   } catch (error) {
     setStatus(`Delete error: ${error.message}`);
   }
@@ -3301,6 +3517,225 @@ function markDirty() {
   state.dirty = true;
   state.modifiedSinceLoad = true;
   setStatus("Unsaved changes...");
+}
+
+function getAnnotationBoundsPixels() {
+  if (!state.imageWidth || !state.imageHeight) {
+    return null;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const includePoint = (px, py) => {
+    if (!Number.isFinite(px) || !Number.isFinite(py)) {
+      return;
+    }
+    minX = Math.min(minX, px);
+    minY = Math.min(minY, py);
+    maxX = Math.max(maxX, px);
+    maxY = Math.max(maxY, py);
+  };
+  for (const ann of state.annotations) {
+    if (!ann) {
+      continue;
+    }
+    if (ann.bbox) {
+      const { x, y, w, h } = bboxToPixels(ann.bbox);
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h)) {
+        const x2 = x + w;
+        const y2 = y + h;
+        includePoint(Math.min(x, x2), Math.min(y, y2));
+        includePoint(Math.max(x, x2), Math.max(y, y2));
+      }
+    }
+    if (Array.isArray(ann.keypoints)) {
+      for (const kp of ann.keypoints) {
+        if (!kp || kp.v <= 0) {
+          continue;
+        }
+        includePoint(kp.x * state.imageWidth, kp.y * state.imageHeight);
+      }
+    }
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
+  minX = clamp(minX, 0, state.imageWidth);
+  minY = clamp(minY, 0, state.imageHeight);
+  maxX = clamp(maxX, 0, state.imageWidth);
+  maxY = clamp(maxY, 0, state.imageHeight);
+  if (maxX - minX < 1) {
+    const centerX = clamp(minX, 0, state.imageWidth);
+    minX = clamp(centerX - 0.5, 0, Math.max(0, state.imageWidth - 1));
+    maxX = Math.min(state.imageWidth, minX + 1);
+  }
+  if (maxY - minY < 1) {
+    const centerY = clamp(minY, 0, state.imageHeight);
+    minY = clamp(centerY - 0.5, 0, Math.max(0, state.imageHeight - 1));
+    maxY = Math.min(state.imageHeight, minY + 1);
+  }
+  if (maxX <= minX || maxY <= minY) {
+    return null;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function distributePadding(availableBefore, availableAfter, totalPad) {
+  if (!Number.isFinite(totalPad) || totalPad <= 0) {
+    return { before: 0, after: 0 };
+  }
+  const half = totalPad / 2;
+  let before = Math.min(Math.max(availableBefore, 0), half);
+  let after = Math.min(Math.max(availableAfter, 0), half);
+  let leftover = totalPad - (before + after);
+  if (leftover <= 0) {
+    return { before, after };
+  }
+  let roomBefore = Math.max(availableBefore - before, 0);
+  let roomAfter = Math.max(availableAfter - after, 0);
+  if (roomAfter >= roomBefore) {
+    const extraAfter = Math.min(roomAfter, leftover);
+    after += extraAfter;
+    leftover -= extraAfter;
+  } else {
+    const extraBefore = Math.min(roomBefore, leftover);
+    before += extraBefore;
+    leftover -= extraBefore;
+  }
+  if (leftover > 0) {
+    roomBefore = Math.max(availableBefore - before, 0);
+    roomAfter = Math.max(availableAfter - after, 0);
+    if (roomAfter > 0) {
+      const extraAfter = Math.min(roomAfter, leftover);
+      after += extraAfter;
+      leftover -= extraAfter;
+    } else if (roomBefore > 0) {
+      const extraBefore = Math.min(roomBefore, leftover);
+      before += extraBefore;
+      leftover -= extraBefore;
+    }
+  }
+  return { before, after };
+}
+
+function expandBoundsWithPadding(bounds, paddingScale) {
+  if (!bounds) {
+    return null;
+  }
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  const totalPadX = Math.max(0, width * paddingScale);
+  const totalPadY = Math.max(0, height * paddingScale);
+  const leftSpace = Math.max(0, bounds.minX);
+  const rightSpace = Math.max(0, state.imageWidth - bounds.maxX);
+  const topSpace = Math.max(0, bounds.minY);
+  const bottomSpace = Math.max(0, state.imageHeight - bounds.maxY);
+  const padX = Math.min(totalPadX, leftSpace + rightSpace);
+  const padY = Math.min(totalPadY, topSpace + bottomSpace);
+  const { before: padLeft, after: padRight } = distributePadding(leftSpace, rightSpace, padX);
+  const { before: padTop, after: padBottom } = distributePadding(topSpace, bottomSpace, padY);
+  const minX = clamp(bounds.minX - padLeft, 0, state.imageWidth);
+  const maxX = clamp(bounds.maxX + padRight, 0, state.imageWidth);
+  const minY = clamp(bounds.minY - padTop, 0, state.imageHeight);
+  const maxY = clamp(bounds.maxY + padBottom, 0, state.imageHeight);
+  if (maxX <= minX || maxY <= minY) {
+    return null;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function maxPaddingScaleForAspect(baseW, baseH, aspect) {
+  if (!Number.isFinite(aspect) || aspect <= 0 || baseW <= 0 || baseH <= 0) {
+    return 0;
+  }
+  const ratio = baseW / baseH;
+  if (ratio >= aspect) {
+    const maxFromWidth = state.imageWidth / baseW - 1;
+    const maxFromHeight = (aspect * state.imageHeight) / baseW - 1;
+    return Math.min(maxFromWidth, maxFromHeight);
+  }
+  const maxFromHeight = state.imageHeight / baseH - 1;
+  const maxFromWidth = state.imageWidth / (baseH * aspect) - 1;
+  return Math.min(maxFromHeight, maxFromWidth);
+}
+
+function getAspectPaddedBounds(bounds, aspect, paddingScale) {
+  if (!bounds) {
+    return null;
+  }
+  const baseW = bounds.maxX - bounds.minX;
+  const baseH = bounds.maxY - bounds.minY;
+  if (baseW <= 0 || baseH <= 0) {
+    return null;
+  }
+  const minSize = computeAspectCropSize(baseW, baseH, aspect);
+  if (minSize.w > state.imageWidth || minSize.h > state.imageHeight) {
+    return null;
+  }
+  let effectivePadding = 0;
+  if (Number.isFinite(paddingScale) && paddingScale > 0) {
+    const maxPadding = maxPaddingScaleForAspect(baseW, baseH, aspect);
+    effectivePadding = clamp(paddingScale, 0, Math.max(0, maxPadding));
+  }
+  return expandBoundsWithPadding(bounds, effectivePadding);
+}
+
+function computeAspectCropSize(baseW, baseH, aspect) {
+  let cropW = baseW;
+  let cropH = baseW / aspect;
+  if (cropH < baseH) {
+    cropH = baseH;
+    cropW = baseH * aspect;
+  }
+  return { w: cropW, h: cropH };
+}
+
+function buildAspectCropRect(bounds, aspect) {
+  const baseW = bounds.maxX - bounds.minX;
+  const baseH = bounds.maxY - bounds.minY;
+  if (baseW <= 0 || baseH <= 0) {
+    return null;
+  }
+  const size = computeAspectCropSize(baseW, baseH, aspect);
+  if (size.w > state.imageWidth || size.h > state.imageHeight) {
+    return null;
+  }
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  const maxX = Math.max(0, state.imageWidth - size.w);
+  const maxY = Math.max(0, state.imageHeight - size.h);
+  const x = clamp(centerX - size.w / 2, 0, maxX);
+  const y = clamp(centerY - size.h / 2, 0, maxY);
+  return { x, y, w: size.w, h: size.h };
+}
+
+function pickAspectCropRect(bounds, aspect, paddingScale) {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return null;
+  }
+  const candidates = [];
+  const primaryBounds = getAspectPaddedBounds(bounds, aspect, paddingScale);
+  const primary = primaryBounds ? buildAspectCropRect(primaryBounds, aspect) : null;
+  if (primary) {
+    candidates.push(primary);
+  }
+  if (Math.abs(aspect - 1) > 0.001) {
+    const altAspect = 1 / aspect;
+    const altBounds = getAspectPaddedBounds(bounds, altAspect, paddingScale);
+    const alternate = altBounds ? buildAspectCropRect(altBounds, altAspect) : null;
+    if (alternate) {
+      candidates.push(alternate);
+    }
+  }
+  if (!candidates.length) {
+    return null;
+  }
+  candidates.sort((a, b) => (a.w * a.h) - (b.w * b.h));
+  return candidates[0];
 }
 
 function getCropRectPixels() {
@@ -3534,28 +3969,69 @@ function cropCorners(bbox) {
   return bboxCorners(bbox);
 }
 
-function updateCorners(corners, activeCorner, nx, ny) {
+function updateCorners(corners, activeCorner, nx, ny, options = {}) {
   const current = {
     x1: corners.tl.x / state.imageWidth,
     y1: corners.tl.y / state.imageHeight,
     x2: corners.br.x / state.imageWidth,
     y2: corners.br.y / state.imageHeight
   };
+  let nextX = nx;
+  let nextY = ny;
+  if (options.keepAspect) {
+    const width = Math.abs(current.x2 - current.x1);
+    const height = Math.abs(current.y2 - current.y1);
+    const aspect = Number.isFinite(options.aspectRatio) && options.aspectRatio > 0
+      ? options.aspectRatio
+      : (width > 0 && height > 0 ? width / height : 1);
+    let opposite = { x: current.x1, y: current.y1 };
+    if (activeCorner === "tl") {
+      opposite = { x: current.x2, y: current.y2 };
+    } else if (activeCorner === "tr") {
+      opposite = { x: current.x1, y: current.y2 };
+    } else if (activeCorner === "bl") {
+      opposite = { x: current.x2, y: current.y1 };
+    }
+    const dx = nextX - opposite.x;
+    const dy = nextY - opposite.y;
+    const fallbackSignX = (activeCorner === "tl" || activeCorner === "bl") ? -1 : 1;
+    const fallbackSignY = (activeCorner === "tl" || activeCorner === "tr") ? -1 : 1;
+    const signX = dx === 0 ? fallbackSignX : Math.sign(dx);
+    const signY = dy === 0 ? fallbackSignY : Math.sign(dy);
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    let adjDx = absDx;
+    let adjDy = absDy;
+    if (absDx === 0 && absDy === 0) {
+      adjDx = 0;
+      adjDy = 0;
+    } else if (absDy === 0) {
+      adjDy = absDx / aspect;
+    } else if (absDx === 0) {
+      adjDx = absDy * aspect;
+    } else if (absDx / absDy > aspect) {
+      adjDx = absDy * aspect;
+    } else {
+      adjDy = absDx / aspect;
+    }
+    nextX = opposite.x + adjDx * signX;
+    nextY = opposite.y + adjDy * signY;
+  }
   if (activeCorner === "tl") {
-    current.x1 = nx;
-    current.y1 = ny;
+    current.x1 = nextX;
+    current.y1 = nextY;
   }
   if (activeCorner === "tr") {
-    current.x2 = nx;
-    current.y1 = ny;
+    current.x2 = nextX;
+    current.y1 = nextY;
   }
   if (activeCorner === "bl") {
-    current.x1 = nx;
-    current.y2 = ny;
+    current.x1 = nextX;
+    current.y2 = nextY;
   }
   if (activeCorner === "br") {
-    current.x2 = nx;
-    current.y2 = ny;
+    current.x2 = nextX;
+    current.y2 = nextY;
   }
   return current;
 }
@@ -3874,8 +4350,30 @@ function getOsdLineHeight() {
   return 18;
 }
 
+function updateOsdMinimizeButton() {
+  if (!osdMinimizeBtn) {
+    return;
+  }
+  if (state.osdMinimized) {
+    osdMinimizeBtn.textContent = "+";
+    osdMinimizeBtn.title = "Restore status panel";
+    osdMinimizeBtn.setAttribute("aria-label", "Restore status panel");
+  } else {
+    osdMinimizeBtn.textContent = "-";
+    osdMinimizeBtn.title = "Minimize status panel";
+    osdMinimizeBtn.setAttribute("aria-label", "Minimize status panel");
+  }
+}
+
+function setOsdMinimized(next) {
+  state.osdMinimized = next;
+  updateOsdMinimizeButton();
+  state.osdCache = "";
+  updateOsd();
+}
+
 function ensureMagnifierAnchor() {
-  if (!Number.isFinite(state.magnifier.width) || state.magnifier.width <= 0) {
+  if (!Number.isFinite(state.magnifier.width) || state.magnifier.width <= 0) {  
     state.magnifier.width = MAGNIFIER_DEFAULT_WIDTH;
   }
   if (!Number.isFinite(state.magnifier.height) || state.magnifier.height <= 0) {

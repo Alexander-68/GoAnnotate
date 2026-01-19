@@ -1,6 +1,6 @@
 # GoAnnotate
 
-Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.
+Visualize, edit and review annotations of YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.
 
 <img width="736" height="381" alt="GoAnnotate_screen" src="https://github.com/user-attachments/assets/8d0bc167-1ccd-4f71-8e2b-339ff0c2e85d" />
 
@@ -15,7 +15,8 @@ Download executable from Releases. No installation is required. Single file. Try
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
-- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), and selected object size.
+- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
+- Minimize the status panel to a single-line summary that shows file index, selected object, and keypoint totals.
 - Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
@@ -27,16 +28,17 @@ Download executable from Releases. No installation is required. Single file. Try
 - Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Automatically center the magnifier on the corresponding keypoint of the first person (class 0) when switching images; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
-- Delete the selected keypoint or object, or open a delete menu to clear all annotations or delete the current image and label file.
+- Delete the selected keypoint or object, or open a delete menu to clear all annotations or move the current image and label file into `imagesDir/deleted` and `labelsDir/deleted`.
 - Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
 - Save changes to label files on image change with fixed six-decimal precision.
-- Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame.
+- Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame; original image/label files are archived in the `deleted` subfolders.
+- Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 1:2, 2:3, 3:4, 16:9) and automatic orientation.
 - Crop save supports JPEG/PNG images; other formats report a save error.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Mark the current image review status as Done after edits are saved.
 - Track review status per image (TODO/Done) in `labelsDir/review_status.json`; missing or empty means everything is TODO.
-- Allow undo per image and clear undo history when switching images.
+- Allow undo per image (up to 512 actions) and clear undo history when switching images.
 - Preserve the current pan/zoom and magnifier state when switching images.
 - Keep the previous frame visible while loading the next image to avoid blank flashes during navigation.
 - Use a full-screen canvas with overlay OSD, top-right Load/Help buttons, and bottom-left Prev / bottom-right Next buttons for image navigation.
@@ -65,7 +67,7 @@ Keyboard
 - `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
-- `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image).
+- `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image, up to 512 actions).
 - `Ctrl` + `D`: Mark the current image as Done (auto-advance to next TODO).
 - `Ctrl` + `A`: Mark the current image as TODO (auto-advance to next TODO).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
@@ -81,10 +83,11 @@ Mouse
 - Left drag: Move the selected keypoint (positions magnifier).
 - Left drag on empty space or bbox: Pan the view (positions magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged; does not reposition the magnifier).
+- Shift + drag a bbox or crop corner: Resize while maintaining the original aspect ratio.
 - Alt + left drag: Define or replace a crop area (applied on save when switching images).
 - Drag crop corners: Resize the crop area.
-- `Ctrl` + left drag: Create a new bounding box when no object is selected (uses the last selected class ID or 0).
-- `Ctrl` + left click: Add a new keypoint to the selected object. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
+- `Ctrl` + left drag: Create a new bounding box (uses the last selected class ID or 0).
+- `Ctrl` + left click (no drag): Add a new keypoint to the selected object on release. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint: Show the keypoint name and visibility tooltip.
@@ -112,15 +115,17 @@ UI
 - The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
 - The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
-- The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected.
-- The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`).
+- The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected (image/label deletion archives originals in `deleted` subfolders).
+- The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
+- The `Crop` button below `Mark` opens aspect choices (1:1, 1:2, 2:3, 3:4, 16:9) to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
 - Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
-- Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes.
+- Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
+- The status panel top-right anchor collapses the panel to a single-line summary; click again to restore it.
 - The OSD `Modified` line shows both edit status and review status (TODO/Done).
 
 ## Run
@@ -137,7 +142,7 @@ By default, the server listens on `127.0.0.1:8080`. You can configure the addres
 go run . -ip 0.0.0.0 -port 9090
 ```
 
-To restrict directory browsing to a specific path (e.g., for security or convenience), use the `-data-root` flag:
+To restrict all file access (browse/list/read/write/delete/review status) to a specific path, use the `-data-root` flag:
 
 ```bash
 go run . -data-root C:\my\data\folder

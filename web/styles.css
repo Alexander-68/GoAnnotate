@@ -129,14 +129,32 @@ body::before {
   top: 12px;
   left: 12px;
   z-index: 2;
-  padding: 10px 12px;
+  --handle-size: 22px;
+  --handle-offset: 0px;
+  --handle-radius: 8px;
+  padding: 8px 32px 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--panel-border);
   background: rgba(255, 255, 255, 0.86);
   font-size: 15px;
   letter-spacing: 0.02em;
+  pointer-events: auto;
+}
+
+.osd-text {
   white-space: pre;
   pointer-events: none;
+}
+
+.osd-minimize {
+  top: 5px;
+  right: 5px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.osd.minimized {
+  padding: 6px 30px 6px 10px;
 }
 
 .corner-actions {
@@ -456,6 +474,7 @@ body::before {
 
 .magnifier.hidden {
   opacity: 0;
+  pointer-events: none;
 }
 
 .magnifier canvas {

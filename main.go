@@ -26,6 +26,7 @@ import (
 //go:embed web/*
 var webContent embed.FS
 var dataRoot string
+var dataRootResolved string
 
 type listResponse struct {
 	Images     []imageEntry `json:"images"`
@@ -87,6 +88,7 @@ type reviewStatusResponse struct {
 }
 
 const reviewStatusFilename = "review_status.json"
+var errBadRequest = errors.New("bad request")
 
 func main() {
 	ip := flag.String("ip", "127.0.0.1", "IP address to listen on")
@@ -100,6 +102,11 @@ func main() {
 			log.Fatalf("invalid data-root: %v", err)
 		}
 		dataRoot = abs
+		if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+			dataRootResolved = resolved
+		} else {
+			dataRootResolved = abs
+		}
 	}
 
 	log.Printf("Starting GoAnnotate with: ip=%s, port=%d, data-root=%q", *ip, *port, *dr)
@@ -155,11 +162,19 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid imagesDir", http.StatusBadRequest)
 		return
 	}
+	if err := enforceDataRootResolved(imagesAbs); err != nil {
+		http.Error(w, "imagesDir outside data-root", http.StatusBadRequest)
+		return
+	}
 	var labelsAbs string
 	if labelsDir != "" {
 		labelsAbs, err = filepath.Abs(labelsDir)
 		if err != nil {
 			http.Error(w, "invalid labelsDir", http.StatusBadRequest)
+			return
+		}
+		if err := enforceDataRootResolved(labelsAbs); err != nil {
+			http.Error(w, "labelsDir outside data-root", http.StatusBadRequest)
 			return
 		}
 	}
@@ -238,8 +253,7 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if dataRoot != "" {
-		// Ensure absPath is inside dataRoot
-		if !strings.HasPrefix(strings.ToLower(absPath), strings.ToLower(dataRoot)) {
+		if err := enforceDataRootResolved(absPath); err != nil {
 			absPath = dataRoot
 		}
 	}
@@ -261,6 +275,9 @@ func handleBrowse(w http.ResponseWriter, r *http.Request) {
 				if err != nil || !fi.IsDir() {
 					continue
 				}
+			}
+			if err := enforceDataRootResolved(fullSubPath); err != nil {
+				continue
 			}
 
 			// Analyze content of the subdirectory
@@ -319,6 +336,10 @@ func handleSuggestLabels(w http.ResponseWriter, r *http.Request) {
 	absImages, err := filepath.Abs(imagesDir)
 	if err != nil {
 		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if err := enforceDataRootResolved(absImages); err != nil {
+		http.Error(w, "imagesDir outside data-root", http.StatusBadRequest)
 		return
 	}
 
@@ -485,10 +506,17 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "imagesDir and imageFile are required for crop", http.StatusBadRequest)
 			return
 		}
-		if err := cropImageFile(payload.ImagesDir, payload.ImageFile, *payload.Crop); err != nil {
-			http.Error(w, fmt.Sprintf("unable to crop image: %v", err), http.StatusBadRequest)
+		if err := cropAndSaveLabels(payload); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, errBadRequest) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, fmt.Sprintf("unable to crop and save: %v", err), status)
 			return
 		}
+		log.Printf("Updated %s (cropped)", payload.File)
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
 	if err != nil {
@@ -507,33 +535,83 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func cropImageFile(imagesDir, imageFile string, crop cropRect) error {
+func cropAndSaveLabels(payload labelPayload) error {
+	tmpImagePath, imagePath, err := cropImageToTemp(payload.ImagesDir, payload.ImageFile, *payload.Crop)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.Remove(tmpImagePath)
+	}()
+
+	labelPath, err := safeJoin(payload.LabelsDir, payload.File)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(labelPath), 0o755); err != nil {
+		return err
+	}
+	tmpLabelPath, err := writeTempFile(filepath.Dir(labelPath), "goannotate-label-*.tmp", []byte(payload.Content), 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.Remove(tmpLabelPath)
+	}()
+
+	imageBackup, imageHadOriginal, err := replaceWithTemp(tmpImagePath, imagePath)
+	if err != nil {
+		return err
+	}
+	labelBackup, labelHadOriginal, err := replaceWithTemp(tmpLabelPath, labelPath)
+	if err != nil {
+		rollbackReplace(imagePath, imageBackup, imageHadOriginal)
+		return err
+	}
+
+	if imageHadOriginal {
+		if err := archiveBackup(payload.ImagesDir, imageBackup, payload.ImageFile); err != nil {
+			log.Printf("Warning: unable to archive image backup: %v", err)
+		}
+	}
+	if labelHadOriginal {
+		if err := archiveBackup(payload.LabelsDir, labelBackup, payload.File); err != nil {
+			log.Printf("Warning: unable to archive label backup: %v", err)
+		}
+	}
+	return nil
+}
+
+func cropImageToTemp(imagesDir, imageFile string, crop cropRect) (string, string, error) {
 	if crop.W <= 0 || crop.H <= 0 {
-		return errors.New("crop width/height must be > 0")
+		return "", "", fmt.Errorf("%w: crop width/height must be > 0", errBadRequest)
 	}
 	fullPath, err := safeJoin(imagesDir, imageFile)
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 	ext := strings.ToLower(filepath.Ext(fullPath))
 	if !isImageExt(ext) {
-		return errors.New("unsupported image type")
+		return "", "", fmt.Errorf("%w: unsupported image type", errBadRequest)
+	}
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		return "", "", fmt.Errorf("%w: crop supports only jpg and png", errBadRequest)
 	}
 	srcFile, err := os.Open(fullPath)
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	img, _, err := image.Decode(srcFile)
 	if err != nil {
 		_ = srcFile.Close()
-		return err
+		return "", "", err
 	}
 	if err := srcFile.Close(); err != nil {
-		return err
+		return "", "", err
 	}
 	bounds := img.Bounds()
 	if crop.X < 0 || crop.Y < 0 || crop.X+crop.W > bounds.Dx() || crop.Y+crop.H > bounds.Dy() {
-		return errors.New("crop rectangle out of bounds")
+		return "", "", fmt.Errorf("%w: crop rectangle out of bounds", errBadRequest)
 	}
 	srcRect := image.Rect(crop.X, crop.Y, crop.X+crop.W, crop.Y+crop.H)
 	dst := image.NewRGBA(image.Rect(0, 0, crop.W, crop.H))
@@ -541,7 +619,7 @@ func cropImageFile(imagesDir, imageFile string, crop cropRect) error {
 
 	tmpFile, err := os.CreateTemp(filepath.Dir(fullPath), "goannotate-crop-*.tmp")
 	if err != nil {
-		return err
+		return "", "", err
 	}
 	tmpName := tmpFile.Name()
 	var encodeErr error
@@ -550,26 +628,112 @@ func cropImageFile(imagesDir, imageFile string, crop cropRect) error {
 		encodeErr = jpeg.Encode(tmpFile, dst, &jpeg.Options{Quality: 95})
 	case ".png":
 		encodeErr = png.Encode(tmpFile, dst)
-	default:
-		encodeErr = errors.New("crop supports only jpg and png")
 	}
 	if encodeErr != nil {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpName)
-		return encodeErr
+		return "", "", encodeErr
 	}
 	if err := tmpFile.Close(); err != nil {
 		_ = os.Remove(tmpName)
-		return err
+		return "", "", err
 	}
-	if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	return tmpName, fullPath, nil
+}
+
+func writeTempFile(dir, pattern string, data []byte, mode fs.FileMode) (string, error) {
+	tmpFile, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmpFile.Name()
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpName)
-		return err
+		return "", err
 	}
-	if err := os.Rename(tmpName, fullPath); err != nil {
+	if err := tmpFile.Close(); err != nil {
 		_ = os.Remove(tmpName)
+		return "", err
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		_ = os.Remove(tmpName)
+		return "", err
+	}
+	return tmpName, nil
+}
+
+func replaceWithTemp(tempPath, targetPath string) (string, bool, error) {
+	if tempPath == "" {
+		return "", false, errors.New("missing temp file")
+	}
+	if _, err := os.Stat(targetPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Rename(tempPath, targetPath); err != nil {
+				return "", false, err
+			}
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	backupPath, err := uniqueBackupPath(targetPath)
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.Rename(targetPath, backupPath); err != nil {
+		return "", false, err
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		_ = os.Rename(backupPath, targetPath)
+		return "", false, err
+	}
+	return backupPath, true, nil
+}
+
+func rollbackReplace(targetPath, backupPath string, hadOriginal bool) {
+	if hadOriginal {
+		_ = os.Remove(targetPath)
+		_ = os.Rename(backupPath, targetPath)
+		return
+	}
+	_ = os.Remove(targetPath)
+}
+
+func uniqueBackupPath(targetPath string) (string, error) {
+	dir := filepath.Dir(targetPath)
+	base := filepath.Base(targetPath)
+	tmpFile, err := os.CreateTemp(dir, base+".bak-")
+	if err != nil {
+		return "", err
+	}
+	backupPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(backupPath)
+		return "", err
+	}
+	if err := os.Remove(backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return backupPath, nil
+}
+
+func archiveBackup(baseDir, backupPath, originalRel string) error {
+	if backupPath == "" {
+		return nil
+	}
+	deletedRel := filepath.Join("deleted", originalRel)
+	dstPath, err := safeJoin(baseDir, deletedRel)
+	if err != nil {
 		return err
 	}
-	return nil
+	uniquePath, err := uniqueDeletedPath(dstPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(uniquePath), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(backupPath, uniquePath)
 }
 
 func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
@@ -603,33 +767,24 @@ func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := deleteResponse{}
-	if err := os.Remove(imagePath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			http.Error(w, "unable to delete image", http.StatusInternalServerError)
-			return
-		}
-	} else {
+	if _, moved, err := moveFileToDeleted(payload.ImagesDir, payload.File); err != nil {
+		http.Error(w, "unable to delete image", http.StatusInternalServerError)
+		return
+	} else if moved {
 		result.DeletedImage = true
 	}
 
 	if payload.LabelsDir != "" {
 		labelName := trimExt(payload.File) + ".txt"
-		labelPath, err := safeJoin(payload.LabelsDir, labelName)
-		if err != nil {
-			http.Error(w, "invalid label path", http.StatusBadRequest)
+		if _, moved, err := moveFileToDeleted(payload.LabelsDir, labelName); err != nil {
+			http.Error(w, "unable to delete label", http.StatusInternalServerError)
 			return
-		}
-		if err := os.Remove(labelPath); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				http.Error(w, "unable to delete label", http.StatusInternalServerError)
-				return
-			}
-		} else {
+		} else if moved {
 			result.DeletedLabel = true
 		}
 	}
 
-	log.Printf("Deleted image=%q label=%t", payload.File, result.DeletedLabel)
+	log.Printf("Deleted image=%q label=%t (archived)", payload.File, result.DeletedLabel)
 	writeJSON(w, result)
 }
 
@@ -745,6 +900,63 @@ func isImageExt(ext string) bool {
 	}
 }
 
+func moveFileToDeleted(baseDir, relPath string) (string, bool, error) {
+	srcPath, err := safeJoin(baseDir, relPath)
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	deletedRel := filepath.Join("deleted", relPath)
+	dstPath, err := safeJoin(baseDir, deletedRel)
+	if err != nil {
+		return "", false, err
+	}
+	uniquePath, err := uniqueDeletedPath(dstPath)
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(uniquePath), 0o755); err != nil {
+		return "", false, err
+	}
+	if err := os.Rename(srcPath, uniquePath); err != nil {
+		return "", false, err
+	}
+	return uniquePath, true, nil
+}
+
+func uniqueDeletedPath(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return path, nil
+		}
+		return "", err
+	}
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	stamp := time.Now().Format("20060102-150405")
+	for i := 1; i <= 9999; i++ {
+		suffix := fmt.Sprintf("%s-%s", name, stamp)
+		if i > 1 {
+			suffix = fmt.Sprintf("%s-%s-%d", name, stamp, i)
+		}
+		candidate := filepath.Join(dir, suffix+ext)
+		if _, err := os.Stat(candidate); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return candidate, nil
+			}
+			return "", err
+		}
+	}
+	return "", errors.New("unable to allocate deleted filename")
+}
+
 func safeJoin(baseDir, rel string) (string, error) {
 	if baseDir == "" {
 		return "", errors.New("missing base dir")
@@ -759,6 +971,9 @@ func safeJoin(baseDir, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := enforceDataRootResolved(baseAbs); err != nil {
+		return "", err
+	}
 	fullAbs, err := filepath.Abs(filepath.Join(baseAbs, rel))
 	if err != nil {
 		return "", err
@@ -770,5 +985,50 @@ func safeJoin(baseDir, rel string) (string, error) {
 	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
 		return "", errors.New("invalid path")
 	}
+	if err := enforceDataRoot(fullAbs); err != nil {
+		return "", err
+	}
+	if err := enforceDataRootResolved(filepath.Dir(fullAbs)); err != nil {
+		return "", err
+	}
 	return fullAbs, nil
+}
+
+func enforceDataRoot(path string) error {
+	if dataRoot == "" {
+		return nil
+	}
+	if !isWithinBase(dataRoot, path) {
+		return errors.New("path outside data-root")
+	}
+	return nil
+}
+
+func enforceDataRootResolved(path string) error {
+	if dataRoot == "" {
+		return nil
+	}
+	root := dataRootResolved
+	if root == "" {
+		root = dataRoot
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return enforceDataRoot(path)
+	}
+	if !isWithinBase(root, resolved) {
+		return errors.New("path outside data-root")
+	}
+	return nil
+}
+
+func isWithinBase(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
