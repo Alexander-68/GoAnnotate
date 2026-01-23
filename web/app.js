@@ -16,6 +16,7 @@ const helpModal = document.getElementById("helpModal");
 const deleteModal = document.getElementById("deleteModal");
 const markModal = document.getElementById("markModal");
 const cropModal = document.getElementById("cropModal");
+const historyModal = document.getElementById("historyModal");
 const prevImageBtn = document.getElementById("prevImageBtn");
 const nextImageBtn = document.getElementById("nextImageBtn");
 const browseImagesBtn = document.getElementById("browseImagesBtn");
@@ -53,6 +54,9 @@ const cropAspect23Btn = document.getElementById("cropAspect23Btn");
 const cropAspect34Btn = document.getElementById("cropAspect34Btn");
 const cropAspect169Btn = document.getElementById("cropAspect169Btn");
 const cropCancelBtn = document.getElementById("cropCancelBtn");
+const restoreInitialBtn = document.getElementById("restoreInitialBtn");
+const restoreLatestBtn = document.getElementById("restoreLatestBtn");
+const historyCancelBtn = document.getElementById("historyCancelBtn");
 
 let loadRequestId = 0;
 let loadAbortController = null;
@@ -229,6 +233,8 @@ const state = {
   images: [],
   index: 0,
   imageName: "",
+  imageOverride: "",
+  restoreImageRel: "",
   imageVersions: {},
   imageBitmap: null,
   imageWidth: 0,
@@ -548,6 +554,14 @@ function init() {
       }
     });
   }
+  if (historyModal) {
+    historyModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.close) {
+        closeHistoryModal();
+      }
+    });
+  }
 
   if (deleteCancelBtn) {
     deleteCancelBtn.addEventListener("click", () => {
@@ -562,6 +576,11 @@ function init() {
   if (cropCancelBtn) {
     cropCancelBtn.addEventListener("click", () => {
       closeCropModal();
+    });
+  }
+  if (historyCancelBtn) {
+    historyCancelBtn.addEventListener("click", () => {
+      closeHistoryModal();
     });
   }
 
@@ -631,6 +650,18 @@ function init() {
     cropAspect169Btn.addEventListener("click", () => {
       closeCropModal();
       applyAspectCrop(16, 9);
+    });
+  }
+  if (restoreInitialBtn) {
+    restoreInitialBtn.addEventListener("click", async () => {
+      closeHistoryModal();
+      await restoreFromHistory("initial");
+    });
+  }
+  if (restoreLatestBtn) {
+    restoreLatestBtn.addEventListener("click", async () => {
+      closeHistoryModal();
+      await restoreFromHistory("latest");
     });
   }
 
@@ -716,6 +747,18 @@ function openCropModal() {
   cropModal.setAttribute("aria-hidden", "false");
 }
 
+function openHistoryModal() {
+  if (!historyModal) {
+    return;
+  }
+  if (!state.images.length) {
+    setStatus("No images loaded.");
+    return;
+  }
+  historyModal.classList.remove("hidden");
+  historyModal.setAttribute("aria-hidden", "false");
+}
+
 function closeDeleteModal() {
   if (!deleteModal) {
     return;
@@ -738,6 +781,14 @@ function closeCropModal() {
   }
   cropModal.classList.add("hidden");
   cropModal.setAttribute("aria-hidden", "true");
+}
+
+function closeHistoryModal() {
+  if (!historyModal) {
+    return;
+  }
+  historyModal.classList.add("hidden");
+  historyModal.setAttribute("aria-hidden", "true");
 }
 
 async function openPicker(target, title) {
@@ -1099,6 +1150,8 @@ async function loadImage(index, options = {}) {
   const viewState = options && options.viewState;
   const magnifierState = options && options.magnifierState;
   const entry = state.images[index];
+  state.imageOverride = "";
+  state.restoreImageRel = "";
   state.loadingImage = true;
   state.dragging.mode = null;
   state.dragging.pendingSelection = null;
@@ -1256,6 +1309,107 @@ async function loadImage(index, options = {}) {
         updateImageNav();
     }
   }
+}
+
+async function loadImageBitmap(file) {
+  if (!state.imagesDir || !file) {
+    return;
+  }
+  const version = state.imageVersions[file] || 0;
+  const imageUrl = `/api/image?imagesDir=${encodeURIComponent(state.imagesDir)}&file=${encodeURIComponent(file)}&v=${version}`;
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error("Unable to load image");
+  }
+  const blob = await imageResponse.blob();
+  const bitmap = await createImageBitmap(blob);
+  if (state.imageBitmap) {
+    state.imageBitmap.close();
+  }
+  state.imageBitmap = bitmap;
+  state.imageWidth = bitmap.width;
+  state.imageHeight = bitmap.height;
+  fitImage();
+}
+
+function applyHistoryCrop(crop) {
+  if (!crop || !state.imageWidth || !state.imageHeight) {
+    state.crop = { active: false, bbox: null };
+    return;
+  }
+  const cx = (crop.x + crop.w / 2) / state.imageWidth;
+  const cy = (crop.y + crop.h / 2) / state.imageHeight;
+  const w = crop.w / state.imageWidth;
+  const h = crop.h / state.imageHeight;
+  state.crop = {
+    active: true,
+    bbox: {
+      cx: clamp(cx, 0, 1),
+      cy: clamp(cy, 0, 1),
+      w: clamp(w, 0, 1),
+      h: clamp(h, 0, 1)
+    }
+  };
+}
+
+async function loadLabelHistory() {
+  if (!state.labelsDir || !state.imageName) {
+    return null;
+  }
+  const labelName = `${stripExt(state.imageName)}.txt`;
+  const historyUrl = `/api/labels_history?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
+  const response = await fetch(historyUrl);
+  if (!response.ok) {
+    return null;
+  }
+  return response.json();
+}
+
+async function restoreFromHistory(kind) {
+  if (!state.imagesDir || !state.labelsDir || !state.imageName) {
+    setStatus("No image loaded.");
+    return;
+  }
+  const history = await loadLabelHistory();
+  if (!history || !history[kind] || typeof history[kind].content !== "string") {
+    setStatus("No history available for this image.");
+    return;
+  }
+  const entry = history[kind];
+  const nextAnnotations = parseLabels(entry.content);
+  const nextKeypointCount = inferKeypointCount(nextAnnotations, state.keypointCount);
+  const imageRel = entry.imageRel || "";
+
+  try {
+    if (imageRel) {
+      await loadImageBitmap(imageRel);
+      state.imageOverride = imageRel;
+      state.restoreImageRel = imageRel;
+    } else if (state.imageOverride) {
+      await loadImageBitmap(state.imageName);
+      state.imageOverride = "";
+      state.restoreImageRel = "";
+    } else {
+      state.restoreImageRel = "";
+    }
+  } catch (error) {
+    setStatus(`History image error: ${error.message}`);
+    return;
+  }
+
+  state.annotations = nextAnnotations;
+  state.keypointCount = nextKeypointCount;
+  state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
+  state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0, isMagnifier: false };
+  state.undoStack = [];
+  if (kind === "initial") {
+    applyHistoryCrop(entry.crop || null);
+  } else {
+    applyHistoryCrop(null);
+  }
+  clearSelection();
+  markDirty();
+  setStatus(`Restored ${kind} labels (unsaved).`);
 }
 
 function labelsModuleAvailable() {
@@ -2860,6 +3014,10 @@ function onKeyDown(event) {
       closeCropModal();
       return;
     }
+    if (historyModal && !historyModal.classList.contains("hidden")) {
+      closeHistoryModal();
+      return;
+    }
   }
   if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA")) {
     return;
@@ -3428,6 +3586,7 @@ function ensureUndoSnapshot() {
 
 function undo() {
   if (state.undoStack.length === 0) {
+    openHistoryModal();
     return;
   }
   const snapshot = state.undoStack.pop();
@@ -3899,6 +4058,7 @@ async function saveLabels(options = {}) {
   }
   const labelName = `${stripExt(state.imageName)}.txt`;
   const cropRect = getCropRectPixels();
+  const restoreImageRel = state.restoreImageRel;
   const annotationsForSave = cropRect
     ? remapAnnotationsForCrop(state.annotations, cropRect)
     : state.annotations;
@@ -3915,6 +4075,11 @@ async function saveLabels(options = {}) {
     imageFile: cropRect ? state.imageName : undefined,
     crop: cropRect || undefined
   };
+  if (restoreImageRel) {
+    payload.imagesDir = state.imagesDir;
+    payload.imageFile = state.imageName;
+    payload.restoreImage = restoreImageRel;
+  }
 
   try {
     const response = await fetch("/api/labels", {
@@ -3930,6 +4095,11 @@ async function saveLabels(options = {}) {
     if (cropRect) {
       state.crop = { active: false, bbox: null };
       state.imageVersions[state.imageName] = (state.imageVersions[state.imageName] || 0) + 1;
+    }
+    if (restoreImageRel) {
+      state.imageVersions[state.imageName] = (state.imageVersions[state.imageName] || 0) + 1;
+      state.imageOverride = "";
+      state.restoreImageRel = "";
     }
     let reviewSaved = true;
     if (shouldMarkDone) {

@@ -51,6 +51,7 @@
           <li>Use <strong>Browse</strong> to pick folders. Single-click enters, double-click selects.</li>
           <li>Labels are auto-matched if naming follows `images` / `labels` convention.</li>
           <li>Changes save automatically on image switch. Undo available for unsaved changes (up to 512 actions per image).</li>
+          <li>Label history is stored in `labels-history/*.json` inside the Labels Dir.</li>
           <li>Image switches keep the previous frame visible while the next loads (no blank flash).</li>
         </ul>
 
@@ -91,6 +92,9 @@
             <div class="key-item"><span>Esc / Ctrl+Z</span> <span>Undo</span></div>
             <div class="key-item"><span>Undo Button</span> <span>Undo</span></div>
         </div>
+        <p class="modal-desc" style="font-size: 14px; margin-top: 4px;">
+            <strong>Undo Restore:</strong> When there is nothing to undo, the Undo button opens a menu to restore the initial or latest labels history.
+        </p>
 
         <div class="modal-section-title">Editing</div>
         <div class="keys-grid">
@@ -179,6 +183,24 @@
         <button id="cropAspect34Btn" class="btn ghost" type="button">3:4</button>
         <button id="cropAspect169Btn" class="btn" type="button">16:9</button>
         <button id="cropCancelBtn" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal hidden" id="historyModal" aria-hidden="true">
+    <div class="modal-scrim" data-close="true"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+      <div class="modal-header">
+        <h2 class="modal-title" id="historyModalTitle">Restore Labels</h2>
+        <button class="modal-close" type="button" data-close="true">X</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Undo is empty. Restore the initial or latest saved labels for this image.</p>
+        <p class="modal-desc">Restores are loaded into the editor and saved only when you save or switch images.</p>
+      </div>
+      <div class="modal-actions">
+        <button id="restoreInitialBtn" class="btn ghost" type="button">Restore Initial</button>
+        <button id="restoreLatestBtn" class="btn" type="button">Restore Latest</button>
+        <button id="historyCancelBtn" class="btn ghost" type="button">Cancel</button>
       </div>
     </div>
   </div>

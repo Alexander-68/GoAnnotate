@@ -52,12 +52,13 @@ type imageEntry struct {
 }
 
 type labelPayload struct {
-	LabelsDir string    `json:"labelsDir"`
-	File      string    `json:"file"`
-	Content   string    `json:"content"`
-	ImagesDir string    `json:"imagesDir"`
-	ImageFile string    `json:"imageFile"`
-	Crop      *cropRect `json:"crop"`
+	LabelsDir    string    `json:"labelsDir"`
+	File         string    `json:"file"`
+	Content      string    `json:"content"`
+	ImagesDir    string    `json:"imagesDir"`
+	ImageFile    string    `json:"imageFile"`
+	Crop         *cropRect `json:"crop"`
+	RestoreImage string    `json:"restoreImage"`
 }
 
 type cropRect struct {
@@ -65,6 +66,18 @@ type cropRect struct {
 	Y int `json:"y"`
 	W int `json:"w"`
 	H int `json:"h"`
+}
+
+type labelHistoryEntry struct {
+	Content   string    `json:"content"`
+	Timestamp string    `json:"timestamp,omitempty"`
+	Crop      *cropRect `json:"crop,omitempty"`
+	ImageRel  string    `json:"imageRel,omitempty"`
+}
+
+type labelHistory struct {
+	Initial labelHistoryEntry `json:"initial"`
+	Latest  labelHistoryEntry `json:"latest"`
 }
 
 type deletePayload struct {
@@ -88,6 +101,7 @@ type reviewStatusResponse struct {
 }
 
 const reviewStatusFilename = "review_status.json"
+
 var errBadRequest = errors.New("bad request")
 
 func main() {
@@ -116,6 +130,7 @@ func main() {
 	mux.HandleFunc("GET /api/image", handleImage)
 	mux.HandleFunc("GET /api/labels", handleLabelsGet)
 	mux.HandleFunc("POST /api/labels", handleLabelsPost)
+	mux.HandleFunc("GET /api/labels_history", handleLabelsHistoryGet)
 	mux.HandleFunc("POST /api/delete_image", handleDeleteImage)
 	mux.HandleFunc("GET /api/browse", handleBrowse)
 	mux.HandleFunc("GET /api/suggest_labels", handleSuggestLabels)
@@ -476,6 +491,44 @@ func handleLabelsGet(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func handleLabelsHistoryGet(w http.ResponseWriter, r *http.Request) {
+	labelsDir := strings.TrimSpace(r.URL.Query().Get("labelsDir"))
+	file := strings.TrimSpace(r.URL.Query().Get("file"))
+	if labelsDir == "" || file == "" {
+		http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
+		return
+	}
+	if !strings.HasSuffix(strings.ToLower(file), ".txt") {
+		http.Error(w, "labels must be .txt", http.StatusBadRequest)
+		return
+	}
+	historyRel := labelHistoryRelPath(file)
+	fullPath, err := safeJoin(labelsDir, historyRel)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "history not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "unable to read history", http.StatusInternalServerError)
+		return
+	}
+	if len(data) == 0 {
+		writeJSON(w, labelHistory{})
+		return
+	}
+	var history labelHistory
+	if err := json.Unmarshal(data, &history); err != nil {
+		http.Error(w, "invalid history", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, history)
+}
+
 func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	body := http.MaxBytesReader(w, r.Body, 8<<20)
 	defer body.Close()
@@ -493,6 +546,7 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 	payload.File = strings.TrimSpace(payload.File)
 	payload.ImagesDir = strings.TrimSpace(payload.ImagesDir)
 	payload.ImageFile = strings.TrimSpace(payload.ImageFile)
+	payload.RestoreImage = strings.TrimSpace(payload.RestoreImage)
 	if payload.LabelsDir == "" || payload.File == "" {
 		http.Error(w, "labelsDir and file are required", http.StatusBadRequest)
 		return
@@ -501,12 +555,24 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "labels must be .txt", http.StatusBadRequest)
 		return
 	}
+	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
+	if err != nil {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	priorContent, err := readLabelContent(fullPath)
+	if err != nil {
+		http.Error(w, "unable to read labels", http.StatusInternalServerError)
+		return
+	}
+
 	if payload.Crop != nil {
 		if payload.ImagesDir == "" || payload.ImageFile == "" {
 			http.Error(w, "imagesDir and imageFile are required for crop", http.StatusBadRequest)
 			return
 		}
-		if err := cropAndSaveLabels(payload); err != nil {
+		imageArchiveRel, err := cropAndSaveLabels(payload, fullPath)
+		if err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, errBadRequest) {
 				status = http.StatusBadRequest
@@ -514,14 +580,23 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("unable to crop and save: %v", err), status)
 			return
 		}
+		if err := updateLabelHistory(payload, priorContent, imageArchiveRel); err != nil {
+			log.Printf("Warning: unable to update label history: %v", err)
+		}
 		log.Printf("Updated %s (cropped)", payload.File)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	fullPath, err := safeJoin(payload.LabelsDir, payload.File)
-	if err != nil {
-		http.Error(w, "invalid path", http.StatusBadRequest)
-		return
+
+	if payload.RestoreImage != "" {
+		if payload.ImagesDir == "" || payload.ImageFile == "" {
+			http.Error(w, "imagesDir and imageFile are required for restore", http.StatusBadRequest)
+			return
+		}
+		if err := restoreImageFromDeleted(payload.ImagesDir, payload.ImageFile, payload.RestoreImage); err != nil {
+			http.Error(w, fmt.Sprintf("unable to restore image: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
@@ -531,29 +606,28 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unable to save labels", http.StatusInternalServerError)
 		return
 	}
+	if err := updateLabelHistory(payload, priorContent, ""); err != nil {
+		log.Printf("Warning: unable to update label history: %v", err)
+	}
 	log.Printf("Updated %s", payload.File)
 	w.WriteHeader(http.StatusOK)
 }
 
-func cropAndSaveLabels(payload labelPayload) error {
+func cropAndSaveLabels(payload labelPayload, labelPath string) (string, error) {
 	tmpImagePath, imagePath, err := cropImageToTemp(payload.ImagesDir, payload.ImageFile, *payload.Crop)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		_ = os.Remove(tmpImagePath)
 	}()
 
-	labelPath, err := safeJoin(payload.LabelsDir, payload.File)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errBadRequest, err)
-	}
 	if err := os.MkdirAll(filepath.Dir(labelPath), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	tmpLabelPath, err := writeTempFile(filepath.Dir(labelPath), "goannotate-label-*.tmp", []byte(payload.Content), 0o644)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() {
 		_ = os.Remove(tmpLabelPath)
@@ -561,23 +635,137 @@ func cropAndSaveLabels(payload labelPayload) error {
 
 	imageBackup, imageHadOriginal, err := replaceWithTemp(tmpImagePath, imagePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	labelBackup, labelHadOriginal, err := replaceWithTemp(tmpLabelPath, labelPath)
 	if err != nil {
 		rollbackReplace(imagePath, imageBackup, imageHadOriginal)
-		return err
+		return "", err
 	}
 
+	var imageArchiveRel string
 	if imageHadOriginal {
-		if err := archiveBackup(payload.ImagesDir, imageBackup, payload.ImageFile); err != nil {
+		archivedPath, err := archiveBackup(payload.ImagesDir, imageBackup, payload.ImageFile)
+		if err != nil {
 			log.Printf("Warning: unable to archive image backup: %v", err)
+		} else {
+			if rel, err := filepath.Rel(payload.ImagesDir, archivedPath); err == nil {
+				imageArchiveRel = filepath.ToSlash(rel)
+			}
 		}
 	}
 	if labelHadOriginal {
-		if err := archiveBackup(payload.LabelsDir, labelBackup, payload.File); err != nil {
+		if _, err := archiveBackup(payload.LabelsDir, labelBackup, payload.File); err != nil {
 			log.Printf("Warning: unable to archive label backup: %v", err)
 		}
+	}
+	return imageArchiveRel, nil
+}
+
+func labelHistoryRelPath(labelFile string) string {
+	rel := strings.TrimSuffix(labelFile, filepath.Ext(labelFile)) + ".json"
+	return filepath.Join("labels-history", rel)
+}
+
+func readLabelContent(fullPath string) (string, error) {
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
+}
+
+func updateLabelHistory(payload labelPayload, priorContent, imageArchiveRel string) error {
+	historyRel := labelHistoryRelPath(payload.File)
+	historyPath, err := safeJoin(payload.LabelsDir, historyRel)
+	if err != nil {
+		return err
+	}
+
+	historyExists := false
+	var history labelHistory
+	if data, err := os.ReadFile(historyPath); err == nil {
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &history); err != nil {
+				return err
+			}
+			historyExists = true
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	if !historyExists {
+		history.Initial = labelHistoryEntry{
+			Content:  priorContent,
+			ImageRel: imageArchiveRel,
+		}
+	} else if history.Initial.ImageRel == "" && imageArchiveRel != "" {
+		history.Initial.ImageRel = imageArchiveRel
+	}
+
+	if historyExists && history.Latest.Content == payload.Content {
+		return nil
+	}
+	history.Latest = labelHistoryEntry{
+		Content:   payload.Content,
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Crop:      payload.Crop,
+	}
+
+	return writeLabelHistory(historyPath, history)
+}
+
+func writeLabelHistory(historyPath string, history labelHistory) error {
+	if err := os.MkdirAll(filepath.Dir(historyPath), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(history, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmpPath, err := writeTempFile(filepath.Dir(historyPath), "goannotate-history-*.tmp", data, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, _, err := replaceWithTemp(tmpPath, historyPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func restoreImageFromDeleted(imagesDir, imageFile, restoreRel string) error {
+	rel := filepath.Clean(restoreRel)
+	deletedRoot := "deleted"
+	if rel == "" {
+		return errors.New("missing restore path")
+	}
+	if !strings.EqualFold(rel, deletedRoot) &&
+		!strings.HasPrefix(strings.ToLower(rel), deletedRoot+string(os.PathSeparator)) {
+		return errors.New("restore path must be under deleted")
+	}
+	restorePath, err := safeJoin(imagesDir, rel)
+	if err != nil {
+		return err
+	}
+	targetPath, err := safeJoin(imagesDir, imageFile)
+	if err != nil {
+		return err
+	}
+	if _, moved, err := moveFileToDeleted(imagesDir, imageFile); err != nil {
+		return err
+	} else if moved {
+		log.Printf("Archived image %s before restore", imageFile)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(restorePath, targetPath); err != nil {
+		return err
 	}
 	return nil
 }
@@ -717,23 +905,26 @@ func uniqueBackupPath(targetPath string) (string, error) {
 	return backupPath, nil
 }
 
-func archiveBackup(baseDir, backupPath, originalRel string) error {
+func archiveBackup(baseDir, backupPath, originalRel string) (string, error) {
 	if backupPath == "" {
-		return nil
+		return "", nil
 	}
 	deletedRel := filepath.Join("deleted", originalRel)
 	dstPath, err := safeJoin(baseDir, deletedRel)
 	if err != nil {
-		return err
+		return "", err
 	}
 	uniquePath, err := uniqueDeletedPath(dstPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(uniquePath), 0o755); err != nil {
-		return err
+		return "", err
 	}
-	return os.Rename(backupPath, uniquePath)
+	if err := os.Rename(backupPath, uniquePath); err != nil {
+		return "", err
+	}
+	return uniquePath, nil
 }
 
 func handleDeleteImage(w http.ResponseWriter, r *http.Request) {
