@@ -246,13 +246,15 @@ const state = {
   colorSchemeIndex: 0,
   lastMouse: {
     screenX: null,
-    screenY: null
+    screenY: null,
+    isMagnifier: false
   },
   hover: {
     objectIndex: -1,
     keypointIndex: -1,
     screenX: 0,
-    screenY: 0
+    screenY: 0,
+    isMagnifier: false
   },
   crop: {
     active: false,
@@ -1158,7 +1160,7 @@ async function loadImage(index, options = {}) {
     state.keypointCount = keypointCount;
     state.baseAnnotations = cloneAnnotations(annotations);
     state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
-    state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0 };
+    state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0, isMagnifier: false };
     state.crop = { active: false, bbox: null };
     state.baseCrop = { active: false, bbox: null };
     state.dirty = false;
@@ -1673,7 +1675,7 @@ function drawObjectLabels(indices) {
   ctx.restore();
 }
 
-function drawHoverLabel() {
+function drawHoverLabelOn(targetCtx, width, height, dpr) {
   const { objectIndex, keypointIndex } = state.hover;
   if (objectIndex < 0 || keypointIndex < 0) {
     return;
@@ -1683,15 +1685,14 @@ function drawHoverLabel() {
   const visibility = kp ? clampVisibility(kp.v) : 0;
   const name = getKeypointName(annotation, keypointIndex);
   const label = `${name}:${visibility}`;
-  const { dpr, width, height } = state.canvasSize;
-  ctx.save();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = "15px 'Space Grotesk', 'Trebuchet MS', sans-serif";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
+  targetCtx.save();
+  targetCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  targetCtx.font = "15px 'Space Grotesk', 'Trebuchet MS', sans-serif";
+  targetCtx.textAlign = "left";
+  targetCtx.textBaseline = "top";
   const paddingX = 7.5;
   const paddingY = 3.75;
-  const textWidth = ctx.measureText(label).width;
+  const textWidth = targetCtx.measureText(label).width;
   const boxWidth = textWidth + paddingX * 2;
   const boxHeight = 22.5;
   let boxX = state.hover.screenX + 12;
@@ -1708,11 +1709,32 @@ function drawHoverLabel() {
   if (boxY + boxHeight > height - 4) {
     boxY = Math.max(4, height - boxHeight - 4);
   }
-  ctx.fillStyle = "rgba(29, 28, 26, 0.9)";
-  ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
-  ctx.fillStyle = "#fef6e8";
-  ctx.fillText(label, boxX + paddingX, boxY + paddingY);
-  ctx.restore();
+  targetCtx.fillStyle = "rgba(29, 28, 26, 0.9)";
+  targetCtx.fillRect(boxX, boxY, boxWidth, boxHeight);
+  targetCtx.fillStyle = "#fef6e8";
+  targetCtx.fillText(label, boxX + paddingX, boxY + paddingY);
+  targetCtx.restore();
+}
+
+function drawHoverLabel() {
+  if (state.hover.isMagnifier) {
+    return;
+  }
+  const { dpr, width, height } = state.canvasSize;
+  drawHoverLabelOn(ctx, width, height, dpr);
+}
+
+function drawMagnifierHoverLabel() {
+  if (!state.hover.isMagnifier) {
+    return;
+  }
+  if (!magnifierCanvas || !magCtx || state.magnifier.minimized) {
+    return;
+  }
+  if (magnifierCanvas.width <= 0 || magnifierCanvas.height <= 0) {
+    return;
+  }
+  drawHoverLabelOn(magCtx, magnifierCanvas.width, magnifierCanvas.height, 1);
 }
 
 function buildOsdSummaryLine() {
@@ -2058,6 +2080,7 @@ function onMouseDown(event) {
   const { worldX, worldY, isMagnifier } = pos;
   state.lastMouse.screenX = pos.screenX;
   state.lastMouse.screenY = pos.screenY;
+  state.lastMouse.isMagnifier = pos.isMagnifier;
 
   if (!isMagnifier && !isWithinImage(worldX, worldY)) {
     return;
@@ -2176,12 +2199,13 @@ function onMouseMove(event) {
   const pos = getPointerState(event, isMagnifier);
   const { worldX, worldY } = pos;
   
-  state.lastMouse.screenX = event.clientX; // Rough global pos for general use
-  state.lastMouse.screenY = event.clientY;
+  state.lastMouse.screenX = pos.screenX;
+  state.lastMouse.screenY = pos.screenY;
+  state.lastMouse.isMagnifier = pos.isMagnifier;
 
   // If not dragging, update hover (using correct context)
   if (!state.dragging.mode) {
-    updateHover(worldX, worldY, pos.scale);
+    updateHover(worldX, worldY, pos.scale, pos.screenX, pos.screenY, pos.isMagnifier);
     return;
   }
 
@@ -2372,7 +2396,10 @@ function onMouseUp(event) {
       const addedIndex = addKeypointAt(
         state.selection.objectIndex,
         pos.worldX,
-        pos.worldY
+        pos.worldY,
+        pos.screenX,
+        pos.screenY,
+        pos.isMagnifier
       );
       if (addedIndex >= 0) {
         state.magnifier.active = true;
@@ -2501,6 +2528,7 @@ function onTouchStart(event) {
     
     state.lastMouse.screenX = touch.x;
     state.lastMouse.screenY = touch.y;
+    state.lastMouse.isMagnifier = touch.isMagnifier;
 
     const scale = touch.isMagnifier ? state.magnifier.scale : state.view.scale;
     const keyPick = pickKeypoint(touch.worldX, touch.worldY, scale);
@@ -2582,6 +2610,7 @@ function onTouchMove(event) {
     state.touch.lastY = touch.y;
     state.lastMouse.screenX = touch.x;
     state.lastMouse.screenY = touch.y;
+    state.lastMouse.isMagnifier = touch.isMagnifier;
 
     if (state.touch.mode === "swipeOnly") {
       return;
@@ -3037,7 +3066,7 @@ function findNextAvailableKeypointIndex(annotation, currentIndex, step) {
   return -1;
 }
 
-function addKeypointAt(objectIndex, worldX, worldY) {
+function addKeypointAt(objectIndex, worldX, worldY, screenX, screenY, isMagnifier) {
   const annotation = state.annotations[objectIndex];
   if (!annotation) {
     return -1;
@@ -3053,28 +3082,48 @@ function addKeypointAt(objectIndex, worldX, worldY) {
   kp.v = 2;
   annotation.hasPose = true;
   setSelection(objectIndex, nextIndex, null);
-  showKeypointHover(objectIndex, nextIndex);
+  showKeypointHover(objectIndex, nextIndex, screenX, screenY, isMagnifier);
   markDirty();
   return nextIndex;
 }
 
-function showKeypointHover(objectIndex, keypointIndex) {
+function showKeypointHover(objectIndex, keypointIndex, screenX, screenY, isMagnifier) {
   const annotation = state.annotations[objectIndex];
   const kp = annotation ? annotation.keypoints[keypointIndex] : null;
   if (!kp) {
     return;
   }
-  let screenX = state.lastMouse.screenX;
-  let screenY = state.lastMouse.screenY;
-  if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+  let hoverX = screenX;
+  let hoverY = screenY;
+  let hoverIsMagnifier = !!isMagnifier;
+  if (!Number.isFinite(hoverX) || !Number.isFinite(hoverY)) {
+    hoverX = state.lastMouse.screenX;
+    hoverY = state.lastMouse.screenY;
+    hoverIsMagnifier = !!state.lastMouse.isMagnifier;
+  }
+  if (!Number.isFinite(hoverX) || !Number.isFinite(hoverY)) {
+    if (hoverIsMagnifier && magnifierCanvas && state.magnifier.active && !state.magnifier.minimized) {
+      const width = magnifierCanvas.width;
+      const height = magnifierCanvas.height;
+      if (width > 0 && height > 0) {
+        const worldX = kp.x * state.imageWidth;
+        const worldY = kp.y * state.imageHeight;
+        hoverX = (worldX - state.magnifier.x) * state.magnifier.scale + width / 2;
+        hoverY = (worldY - state.magnifier.y) * state.magnifier.scale + height / 2;
+      }
+    }
+  }
+  if (!Number.isFinite(hoverX) || !Number.isFinite(hoverY)) {
     const pos = worldToScreen(kp.x * state.imageWidth, kp.y * state.imageHeight);
-    screenX = pos.x;
-    screenY = pos.y;
+    hoverX = pos.x;
+    hoverY = pos.y;
+    hoverIsMagnifier = false;
   }
   state.hover.objectIndex = objectIndex;
   state.hover.keypointIndex = keypointIndex;
-  state.hover.screenX = screenX;
-  state.hover.screenY = screenY;
+  state.hover.screenX = hoverX;
+  state.hover.screenY = hoverY;
+  state.hover.isMagnifier = hoverIsMagnifier;
 }
 
 function finishNewBBox(event) {
@@ -4227,13 +4276,22 @@ function findNextVisibleKeypoint(ann, currentIndex, step) {
   return -1;
 }
 
-function updateHover(worldX, worldY, scale) {
+function updateHover(worldX, worldY, scale, screenX, screenY, isMagnifier) {
   const pick = pickKeypoint(worldX, worldY, scale);
   if (pick) {
+    let hoverX = screenX;
+    let hoverY = screenY;
+    let hoverIsMagnifier = !!isMagnifier;
+    if (!Number.isFinite(hoverX) || !Number.isFinite(hoverY)) {
+      hoverX = state.lastMouse.screenX;
+      hoverY = state.lastMouse.screenY;
+      hoverIsMagnifier = !!state.lastMouse.isMagnifier;
+    }
     state.hover.objectIndex = pick.objectIndex;
     state.hover.keypointIndex = pick.keypointIndex;
-    state.hover.screenX = state.lastMouse.screenX;
-    state.hover.screenY = state.lastMouse.screenY;
+    state.hover.screenX = hoverX;
+    state.hover.screenY = hoverY;
+    state.hover.isMagnifier = hoverIsMagnifier;
     return;
   }
   clearHover();
@@ -4242,6 +4300,7 @@ function updateHover(worldX, worldY, scale) {
 function clearHover() {
   state.hover.objectIndex = -1;
   state.hover.keypointIndex = -1;
+  state.hover.isMagnifier = false;
 }
 
 function getPointerState(event, forcedMagnifier = null) {
@@ -4256,11 +4315,11 @@ function getPointerState(event, forcedMagnifier = null) {
     // worldX = (screenX - width/2) / scale + centerX
     const worldX = (screenX - rect.width / 2) / effectiveScale + state.magnifier.x;
     const worldY = (screenY - rect.height / 2) / effectiveScale + state.magnifier.y;
-    return { screenX: event.clientX, screenY: event.clientY, worldX, worldY, scale: effectiveScale, isMagnifier: true };
+    return { screenX, screenY, worldX, worldY, scale: effectiveScale, isMagnifier: true };
   }
   
   const world = screenToWorld(screenX, screenY);
-  return { screenX: event.clientX, screenY: event.clientY, worldX: world.x, worldY: world.y, scale: state.view.scale, isMagnifier: false };
+  return { screenX, screenY, worldX: world.x, worldY: world.y, scale: state.view.scale, isMagnifier: false };
 }
 
 function getMousePos(event) {
@@ -4733,6 +4792,7 @@ function updateMagnifier() {
   magCtx.lineTo(cx, cy + crossSize);
   magCtx.stroke();
   
+  drawMagnifierHoverLabel();
 }
 
 function pickThreshold(scale) {

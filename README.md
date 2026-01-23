@@ -21,7 +21,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
 - Edit keypoints and bounding boxes with drag handles and automatic normalized updates.
 - When an object is selected, render only that object's bbox and keypoints.     
-- Show keypoint names with visibility (e.g., `left ear:1` or `right ankle:1`) on hover.
+- Show keypoint names with visibility (e.g., `left ear:1` or `right ankle:1`) on hover in the main canvas and magnifier.
 - Show a cursor-centered magnifier window on keypoint selection or double-click/tap for precise inspection and editing.
 - Keep the magnifier window anchored on screen once opened so selections inside it do not reposition the view.
 - Move, resize, or minimize the magnifier window using its corner handles.
@@ -90,7 +90,7 @@ Mouse
 - `Ctrl` + left click (no drag): Add a new keypoint to the selected object on release. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
-- Hover keypoint: Show the keypoint name and visibility tooltip.
+- Hover keypoint (canvas or magnifier): Show the keypoint name and visibility tooltip.
 - Magnifier corners: Drag top-left to move (keeps resizing when it hits the right/bottom edge), drag bottom-right to resize (free aspect), click top-right to minimize and click the '+' to restore. Drag the minimized tile to reposition it.
 - Double click: Center and unminimize the magnifier on the cursor.
 - Click or drag outside the image: No action.

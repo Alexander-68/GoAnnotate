@@ -6,6 +6,6 @@ Maintain Help panel updated with description, interactions (keyboard, mouse, tou
 
 Do not start the application by yourself.
 
-
+When during evaluating task you find something unclear or inconsistent - ask me for confirmation before implementing code.
 
 
