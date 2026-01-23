@@ -1762,14 +1762,41 @@ function buildOsdSummaryLine() {
   return `${base} ${suffix}`;
 }
 
+function getImageFolderPath() {
+  if (!state.imageName) {
+    return "-";
+  }
+  const slashIndex = state.imageName.lastIndexOf("/");
+  const backslashIndex = state.imageName.lastIndexOf("\\");
+  const sepIndex = Math.max(slashIndex, backslashIndex);
+  const relDir = sepIndex >= 0 ? state.imageName.slice(0, sepIndex) : "";
+  const baseDir = state.imagesDir || "";
+  if (!baseDir && !relDir) {
+    return "-";
+  }
+  if (!baseDir) {
+    return relDir || "-";
+  }
+  if (!relDir) {
+    return baseDir;
+  }
+  const useBackslash = baseDir.includes("\\");
+  const sep = useBackslash ? "\\" : "/";
+  const normalizedRel = useBackslash ? relDir.replaceAll("/", "\\") : relDir.replaceAll("\\", "/");
+  const trimmedBase = (baseDir.endsWith("/") || baseDir.endsWith("\\")) ? baseDir.slice(0, -1) : baseDir;
+  const trimmedRel = (normalizedRel.startsWith("/") || normalizedRel.startsWith("\\")) ? normalizedRel.slice(1) : normalizedRel;
+  return `${trimmedBase}${sep}${trimmedRel}`;
+}
+
 function updateOsd() {
   if (!osdEl || !osdTextEl) {
     return;
   }
-  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";    
-  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);   
+  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
+  const folderLine = `Folder: ${getImageFolderPath()}`;
+  const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
   const countLine = state.images.length
-    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`     
+    ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
     : "Index: 0/0 TODO: 0";
   const resLine = state.imageWidth && state.imageHeight
     ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
@@ -1796,6 +1823,7 @@ function updateOsd() {
   const selectedLines = buildSelectedLines();
   const lines = [
     fileLine,
+    folderLine,
     countLine,
     resLine,
     ...(cropLine ? [cropLine] : []),
