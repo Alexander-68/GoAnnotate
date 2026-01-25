@@ -3584,9 +3584,39 @@ function ensureUndoSnapshot() {
   state.dragging.snapshotTaken = true;
 }
 
+function hasHistoryEntry(entry) {
+  return entry
+    && Object.prototype.hasOwnProperty.call(entry, "content")
+    && typeof entry.content === "string";
+}
+
+async function openHistoryModalIfAvailable() {
+  if (!historyModal) {
+    return;
+  }
+  if (!state.images.length || !state.labelsDir || !state.imageName) {
+    return;
+  }
+  let history = null;
+  try {
+    history = await loadLabelHistory();
+  } catch (error) {
+    return;
+  }
+  if (!history) {
+    return;
+  }
+  const hasInitial = hasHistoryEntry(history.initial);
+  const hasLatest = hasHistoryEntry(history.latest);
+  if (!hasInitial || !hasLatest) {
+    return;
+  }
+  openHistoryModal();
+}
+
 function undo() {
   if (state.undoStack.length === 0) {
-    openHistoryModal();
+    void openHistoryModalIfAvailable();
     return;
   }
   const snapshot = state.undoStack.pop();

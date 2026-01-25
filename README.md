@@ -70,7 +70,7 @@ Keyboard
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image, up to 512 actions).
-- `Esc` or `Ctrl` + `Z` when nothing to undo: Open the restore menu for initial/latest label history.
+- `Esc` or `Ctrl` + `Z` when nothing to undo: Open the restore menu for initial/latest label history when both are available.
 - `Ctrl` + `D`: Mark the current image as Done (auto-advance to next TODO).
 - `Ctrl` + `A`: Mark the current image as TODO (auto-advance to next TODO).
 - `V`: Cycle visibility of the active keypoint (0 -> 1 -> 2) and update its color.
@@ -120,7 +120,7 @@ UI
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected (image/label deletion archives originals in `deleted` subfolders).
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
-- When nothing is left to undo, the `Undo` button opens a restore menu for initial/latest label history; restores are loaded into the editor and saved on the next save or image switch.
+- When nothing is left to undo, the `Undo` button opens a restore menu for initial/latest label history when both are available; restores are loaded into the editor and saved on the next save or image switch.
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
 - The `Crop` button below `Mark` opens aspect choices (1:1, 1:2, 2:3, 3:4, 16:9) to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
 - Current Done/TODO saves any unsaved edits before marking and advancing.
