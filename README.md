@@ -37,6 +37,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Define a crop area with Alt + drag, resize it via corner handles, and crop the image on save while remapping annotations to the cropped frame; original image/label files are archived in the `deleted` subfolders.
 - Auto-fit a crop area to all annotations with up to 10% padding (reduced near borders to keep the crop in-frame) using preset aspect ratios (1:1, 1:2, 2:3, 3:4, 16:9) and automatic orientation.
 - Crop save supports JPEG/PNG images; other formats report a save error.
+- Estimate labels for the current image using up to 8 previous labeled frames with quadratic motion for bounding boxes and keypoints, replacing current labels.
 - Keep the OSD status marked as modified until switching images or undoing all changes.
 - Mark the current image review status as Done after edits are saved.
 - Track review status per image (TODO/Done) in `labelsDir/review_status.json`; missing or empty means everything is TODO.
@@ -123,6 +124,7 @@ UI
 - When nothing is left to undo, the `Undo` button opens a restore menu for initial/latest label history when both are available; restores are loaded into the editor and saved on the next save or image switch.
 - The `Mark` button below `Undo` opens review controls for the current image or entire folder.
 - The `Crop` button below `Mark` opens aspect choices (1:1, 1:2, 2:3, 3:4, 16:9) to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
+- The `Estm` button below `Crop` estimates labels from up to 8 previous images using quadratic motion, replacing current labels.
 - Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.

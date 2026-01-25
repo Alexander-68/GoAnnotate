@@ -10,6 +10,7 @@ const deleteBtn = document.getElementById("deleteBtn");
 const undoBtn = document.getElementById("undoBtn");
 const markBtn = document.getElementById("markBtn");
 const cropBtn = document.getElementById("cropBtn");
+const estmBtn = document.getElementById("estmBtn");
 const confirmLoadBtn = document.getElementById("confirmLoadBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
@@ -226,6 +227,9 @@ const MAGNIFIER_DEFAULT_HEIGHT = 360;
 const MAGNIFIER_MIN_WIDTH = 160;
 const MAGNIFIER_MIN_HEIGHT = 160;
 const MAGNIFIER_MINIMIZED_SIZE = 44;
+const ESTIMATE_LOOKBACK = 8;
+const ESTIMATE_MIN_BBOX = 0.001;
+const ESTIMATE_MIN_TRACK_DIST = 0.12;
 
 const state = {
   imagesDir: "",
@@ -399,6 +403,11 @@ function init() {
   if (cropBtn) {
     cropBtn.addEventListener("click", () => {
       openCropModal();
+    });
+  }
+  if (estmBtn) {
+    estmBtn.addEventListener("click", () => {
+      estimateLabelsFromHistory();
     });
   }
 
@@ -1410,6 +1419,364 @@ async function restoreFromHistory(kind) {
   clearSelection();
   markDirty();
   setStatus(`Restored ${kind} labels (unsaved).`);
+}
+
+async function estimateLabelsFromHistory() {
+  if (!state.images.length || !state.labelsDir || !state.imageName) {
+    setStatus("No image loaded.");
+    return;
+  }
+  if (!ensureLabelsModule()) {
+    return;
+  }
+  if (state.index <= 0) {
+    setStatus("No previous images to estimate from.");
+    return;
+  }
+  const frames = await loadPreviousLabelFrames(ESTIMATE_LOOKBACK);
+  if (frames.length === 0) {
+    setStatus("No previous labels to estimate from.");
+    return;
+  }
+
+  if (frames.length === 1) {
+    pushUndo();
+    const annotations = cloneAnnotations(frames[0].annotations);
+    state.annotations = annotations;
+    state.keypointCount = inferKeypointCount(annotations, state.keypointCount);
+    clearSelection();
+    markDirty();
+    setStatus("Estimated labels from the last available frame.");
+    return;
+  }
+
+  const tracks = buildTracks(frames);
+  const nextT = frames.length;
+  const estimated = tracks.map((track) => estimateTrackAnnotation(track, nextT)).filter(Boolean);
+  if (estimated.length === 0) {
+    setStatus("No labels available to estimate.");
+    return;
+  }
+  pushUndo();
+  state.annotations = estimated;
+  state.keypointCount = inferKeypointCount(estimated, state.keypointCount);
+  clearSelection();
+  markDirty();
+  setStatus(`Estimated ${estimated.length} label(s) from ${frames.length} frame(s).`);
+}
+
+async function loadPreviousLabelFrames(limit) {
+  const frames = [];
+  const lookback = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : ESTIMATE_LOOKBACK;
+  const requests = [];
+  for (let offset = 1; offset <= lookback; offset += 1) {
+    const idx = state.index - offset;
+    if (idx < 0 || idx >= state.images.length) {
+      break;
+    }
+    const entry = state.images[idx];
+    const labelName = `${stripExt(entry.name)}.txt`;
+    const url = `/api/labels?labelsDir=${encodeURIComponent(state.labelsDir)}&file=${encodeURIComponent(labelName)}`;
+    requests.push(fetch(url).then((response) => {
+      if (!response.ok) {
+        return "";
+      }
+      return response.text();
+    }).catch(() => ""));
+  }
+  const texts = await Promise.all(requests);
+  for (let i = 0; i < texts.length; i += 1) {
+    const annotations = parseLabels(texts[i]);
+    if (annotations.length === 0) {
+      continue;
+    }
+    frames.push({
+      t: frames.length,
+      annotations
+    });
+  }
+  frames.reverse();
+  for (let i = 0; i < frames.length; i += 1) {
+    frames[i].t = i;
+  }
+  return frames;
+}
+
+function buildTracks(frames) {
+  const tracks = [];
+  for (const frame of frames) {
+    const annotations = frame.annotations;
+    const assignedTracks = new Set();
+    const assignedAnns = new Set();
+    const candidates = [];
+    for (let annIndex = 0; annIndex < annotations.length; annIndex += 1) {
+      const ann = annotations[annIndex];
+      if (!ann || !ann.bbox) {
+        continue;
+      }
+      for (let trackIndex = 0; trackIndex < tracks.length; trackIndex += 1) {
+        const track = tracks[trackIndex];
+        const last = track.frames[track.frames.length - 1];
+        if (!last || !last.ann || track.classId !== ann.classId) {
+          continue;
+        }
+        const dist = centerDistance(ann.bbox, last.ann.bbox);
+        const maxDist = estimateMatchDistance(ann.bbox, last.ann.bbox);
+        candidates.push({ dist, maxDist, trackIndex, annIndex });
+      }
+    }
+    candidates.sort((a, b) => a.dist - b.dist);
+    for (const candidate of candidates) {
+      if (assignedTracks.has(candidate.trackIndex) || assignedAnns.has(candidate.annIndex)) {
+        continue;
+      }
+      if (candidate.dist > candidate.maxDist) {
+        continue;
+      }
+      assignedTracks.add(candidate.trackIndex);
+      assignedAnns.add(candidate.annIndex);
+      const track = tracks[candidate.trackIndex];
+      track.frames.push({ t: frame.t, ann: annotations[candidate.annIndex] });
+    }
+    for (let annIndex = 0; annIndex < annotations.length; annIndex += 1) {
+      if (assignedAnns.has(annIndex)) {
+        continue;
+      }
+      const ann = annotations[annIndex];
+      if (!ann || !ann.bbox) {
+        continue;
+      }
+      tracks.push({
+        classId: ann.classId,
+        frames: [{ t: frame.t, ann }]
+      });
+    }
+  }
+  return tracks;
+}
+
+function centerDistance(a, b) {
+  if (!a || !b) {
+    return Infinity;
+  }
+  const dx = (a.cx || 0) - (b.cx || 0);
+  const dy = (a.cy || 0) - (b.cy || 0);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function estimateMatchDistance(current, previous) {
+  if (!current || !previous) {
+    return ESTIMATE_MIN_TRACK_DIST;
+  }
+  const diagA = Math.sqrt((current.w || 0) ** 2 + (current.h || 0) ** 2);
+  const diagB = Math.sqrt((previous.w || 0) ** 2 + (previous.h || 0) ** 2);
+  const diag = Math.max(diagA, diagB);
+  return Math.max(ESTIMATE_MIN_TRACK_DIST, diag * 3);
+}
+
+function estimateTrackAnnotation(track, nextT) {
+  if (!track || !Array.isArray(track.frames) || track.frames.length === 0) {
+    return null;
+  }
+  const samples = track.frames;
+  const last = samples[samples.length - 1].ann;
+  if (!last || !last.bbox) {
+    return null;
+  }
+  const estimateScalar = (selector) => {
+    const ts = [];
+    const ys = [];
+    for (const sample of samples) {
+      const value = selector(sample.ann);
+      if (!Number.isFinite(value)) {
+        continue;
+      }
+      ts.push(sample.t);
+      ys.push(value);
+    }
+    if (ys.length === 0) {
+      return null;
+    }
+    return predictValue(ts, ys, nextT);
+  };
+
+  const cx = clamp(estimateScalar((ann) => ann.bbox.cx) ?? last.bbox.cx, 0, 1);
+  const cy = clamp(estimateScalar((ann) => ann.bbox.cy) ?? last.bbox.cy, 0, 1);
+  const w = clamp(estimateScalar((ann) => ann.bbox.w) ?? last.bbox.w, ESTIMATE_MIN_BBOX, 1);
+  const h = clamp(estimateScalar((ann) => ann.bbox.h) ?? last.bbox.h, ESTIMATE_MIN_BBOX, 1);
+
+  const keypoints = [];
+  if (last.hasPose) {
+    const keypointCount = getAnnotationKeypointCount(last);
+    for (let i = 0; i < keypointCount; i += 1) {
+      const kpSamples = [];
+      for (const sample of samples) {
+        const kp = sample.ann.keypoints && sample.ann.keypoints[i];
+        if (kp && kp.v > 0) {
+          kpSamples.push({ t: sample.t, kp });
+        }
+      }
+      let kpX = null;
+      let kpY = null;
+      if (kpSamples.length > 0) {
+        const ts = kpSamples.map((entry) => entry.t);
+        const xs = kpSamples.map((entry) => entry.kp.x);
+        const ys = kpSamples.map((entry) => entry.kp.y);
+        kpX = predictValue(ts, xs, nextT);
+        kpY = predictValue(ts, ys, nextT);
+      }
+      const lastKp = last.keypoints && last.keypoints[i];
+      const x = clamp(kpX ?? (lastKp ? lastKp.x : 0), 0, 1);
+      const y = clamp(kpY ?? (lastKp ? lastKp.y : 0), 0, 1);
+      const v = clampVisibility(findLatestVisibility(samples, i));
+      keypoints.push({ x, y, v });
+    }
+  }
+
+  return {
+    classId: last.classId,
+    bbox: { cx, cy, w, h },
+    keypoints,
+    hasPose: !!last.hasPose
+  };
+}
+
+function findLatestVisibility(samples, index) {
+  for (let i = samples.length - 1; i >= 0; i -= 1) {
+    const kp = samples[i].ann.keypoints && samples[i].ann.keypoints[index];
+    if (!kp) {
+      continue;
+    }
+    return Number.isFinite(kp.v) ? kp.v : 0;
+  }
+  return 0;
+}
+
+function predictValue(ts, ys, nextT) {
+  if (ys.length === 1) {
+    return ys[0];
+  }
+  if (ys.length >= 3) {
+    const coeffs = quadraticFit(ts, ys);
+    if (coeffs) {
+      const [a, b, c] = coeffs;
+      return a * nextT * nextT + b * nextT + c;
+    }
+  }
+  const linear = linearFit(ts, ys);
+  if (linear) {
+    return linear[0] * nextT + linear[1];
+  }
+  return ys[ys.length - 1];
+}
+
+function linearFit(ts, ys) {
+  const n = ts.length;
+  if (n === 0) {
+    return null;
+  }
+  if (n === 1) {
+    return [0, ys[0]];
+  }
+  let sumT = 0;
+  let sumT2 = 0;
+  let sumY = 0;
+  let sumTY = 0;
+  for (let i = 0; i < n; i += 1) {
+    const t = ts[i];
+    const y = ys[i];
+    sumT += t;
+    sumT2 += t * t;
+    sumY += y;
+    sumTY += t * y;
+  }
+  const denom = n * sumT2 - sumT * sumT;
+  if (Math.abs(denom) < 1e-8) {
+    return [0, ys[n - 1]];
+  }
+  const slope = (n * sumTY - sumT * sumY) / denom;
+  const intercept = (sumY - slope * sumT) / n;
+  return [slope, intercept];
+}
+
+function quadraticFit(ts, ys) {
+  const n = ts.length;
+  if (n < 3) {
+    return null;
+  }
+  let s0 = n;
+  let s1 = 0;
+  let s2 = 0;
+  let s3 = 0;
+  let s4 = 0;
+  let t0 = 0;
+  let t1 = 0;
+  let t2 = 0;
+  for (let i = 0; i < n; i += 1) {
+    const t = ts[i];
+    const y = ys[i];
+    const t2v = t * t;
+    const t3v = t2v * t;
+    const t4v = t2v * t2v;
+    s1 += t;
+    s2 += t2v;
+    s3 += t3v;
+    s4 += t4v;
+    t0 += y;
+    t1 += t * y;
+    t2 += t2v * y;
+  }
+  const matrix = [
+    [s4, s3, s2],
+    [s3, s2, s1],
+    [s2, s1, s0]
+  ];
+  const solution = solve3x3(matrix, [t2, t1, t0]);
+  return solution;
+}
+
+function solve3x3(matrix, vector) {
+  const a = matrix.map((row) => row.slice());
+  const b = vector.slice();
+  const n = 3;
+  for (let i = 0; i < n; i += 1) {
+    let pivot = i;
+    let maxVal = Math.abs(a[i][i]);
+    for (let r = i + 1; r < n; r += 1) {
+      const val = Math.abs(a[r][i]);
+      if (val > maxVal) {
+        maxVal = val;
+        pivot = r;
+      }
+    }
+    if (maxVal < 1e-10) {
+      return null;
+    }
+    if (pivot !== i) {
+      const tempRow = a[i];
+      a[i] = a[pivot];
+      a[pivot] = tempRow;
+      const tempVal = b[i];
+      b[i] = b[pivot];
+      b[pivot] = tempVal;
+    }
+    const pivotVal = a[i][i];
+    for (let c = i; c < n; c += 1) {
+      a[i][c] /= pivotVal;
+    }
+    b[i] /= pivotVal;
+    for (let r = 0; r < n; r += 1) {
+      if (r === i) {
+        continue;
+      }
+      const factor = a[r][i];
+      for (let c = i; c < n; c += 1) {
+        a[r][c] -= factor * a[i][c];
+      }
+      b[r] -= factor * b[i];
+    }
+  }
+  return b;
 }
 
 function labelsModuleAvailable() {
