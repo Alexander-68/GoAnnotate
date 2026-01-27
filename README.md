@@ -7,6 +7,7 @@ Visualize, edit and review annotations of YOLO11 detections plus YOLO11 (17-keyp
 ## Description
 
 GoAnnotate is a single-binary Go + Canvas tool for reviewing and editing YOLO11 detection/pose annotations and MPII pose annotations. The backend serves the embedded frontend and reads/writes label files on disk while the frontend handles high-frequency rendering, zoom/pan, and annotation edits. Pose formats are inferred from keypoint triplet counts in each label line (17 for YOLO11, 16 for MPII).
+Each loaded dataset has a Task (Auto, Detection, Pose, Pose_mpii). Auto is shown for new or empty datasets until the first labeled image is saved. On that save, bbox-only labels lock the Task to Detection, while any keypoint data locks it to Pose. Once set, the Task stays fixed until you Load a new dataset, and the current Task is displayed in the status panel.
 
 ## Quick Start
 
@@ -15,7 +16,7 @@ Download executable from Releases. No installation is required. Single file. Try
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
-- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows file and folder, status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
+- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows file and folder, index/TODO + Task, resolution/zoom, status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
 - Minimize the status panel to a single-line summary that shows file index, selected object, and keypoint totals.
 - Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
@@ -28,6 +29,7 @@ Download executable from Releases. No installation is required. Single file. Try
 - Automatically center the magnifier on the corresponding keypoint when switching objects, based on the closest visible keypoint of the previous selection; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Automatically center the magnifier on the corresponding keypoint of the first person (class 0) when switching images; if missing, use the nearest lower-index valid keypoint, then higher, or the object's center.
 - Add new objects and keypoints with automatic keypoint naming and class reuse.
+- Lock the dataset Task to Detection (bbox-only), Pose (17 keypoints), or Pose_mpii (16 keypoints) based on existing labels or the first labeled save; Detection disables keypoints and Pose saves fill missing keypoints with `(0,0,0)` for consistency.
 - Delete the selected keypoint or object, or open a delete menu to clear all annotations or move the current image and label file into `imagesDir/deleted` and `labelsDir/deleted`.
 - Detect YOLO11 (17-keypoint) vs MPII (16-keypoint) pose formats per label line and render the appropriate skeleton.
 - Switch between multiple annotation color schemes for visibility.
@@ -91,7 +93,7 @@ Mouse
 - Alt + left drag: Define or replace a crop area (applied on save when switching images).
 - Drag crop corners: Resize the crop area.
 - `Ctrl` + left drag: Create a new bounding box (uses the last selected class ID or 0).
-- `Ctrl` + left click (no drag): Add a new keypoint to the selected object on release. It starts from the minimal available ID or from the next available ID above the last selected keypoint.
+- `Ctrl` + left click (no drag): Add a new keypoint to the selected object on release. It starts from the minimal available ID or from the next available ID above the last selected keypoint (disabled in Detection task).
 - Right drag or Space + drag: Pan the view.
 - Mouse wheel: Zoom (cursor-centered, only when over the image).
 - Hover keypoint (canvas or magnifier): Show the keypoint name and visibility tooltip.
@@ -131,7 +133,7 @@ UI
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
-- The status panel lists File and Folder on the first two lines; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
+- The status panel lists File and Folder on the first two lines, then Index/TODO and Task, followed by Resolution/Zoom; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
 - The OSD `Modified` line shows both edit status and review status (TODO/Done).
 
 ## Run

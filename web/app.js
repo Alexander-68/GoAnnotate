@@ -131,6 +131,12 @@ const POSE_FORMATS = {
   }
 };
 const DEFAULT_POSE_FORMAT = "yolo11_pose";
+const TASKS = {
+  AUTO: "Auto",
+  DETECTION: "Detection",
+  POSE: "Pose",
+  POSE_MPII: "Pose_mpii"
+};
 
 const COLOR_SCHEMES = [
   {
@@ -253,6 +259,8 @@ const state = {
   lastClassId: 0,
   lastSelectedKeypointIndex: -1,
   keypointCount: DEFAULT_KPT_COUNT,
+  task: TASKS.AUTO,
+  taskLocked: false,
   colorSchemeIndex: 0,
   lastMouse: {
     screenX: null,
@@ -1115,7 +1123,7 @@ async function openProject() {
     state.images = images;
     state.imageVersions = {};
     await loadReviewStatus(labelsDir);
-    state.keypointCount = DEFAULT_KPT_COUNT;
+    resetTask();
     if (state.images.length === 0) {
       setStatus("No images found in the directory.");
       state.loadingImage = false;
@@ -1206,7 +1214,7 @@ async function loadImage(index, options = {}) {
     }
     const labelText = await labelResponse.text();
     const annotations = parseLabels(labelText);
-    const keypointCount = inferKeypointCount(annotations, state.keypointCount);
+    syncTaskWithAnnotations(annotations);
 
     if (state.imageBitmap) {
         state.imageBitmap.close();
@@ -1219,7 +1227,6 @@ async function loadImage(index, options = {}) {
     state.imageWidth = bitmap.width;
     state.imageHeight = bitmap.height;
     state.annotations = annotations;
-    state.keypointCount = keypointCount;
     state.baseAnnotations = cloneAnnotations(annotations);
     state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
     state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0, isMagnifier: false };
@@ -1386,7 +1393,7 @@ async function restoreFromHistory(kind) {
   }
   const entry = history[kind];
   const nextAnnotations = parseLabels(entry.content);
-  const nextKeypointCount = inferKeypointCount(nextAnnotations, state.keypointCount);
+  syncTaskWithAnnotations(nextAnnotations);
   const imageRel = entry.imageRel || "";
 
   try {
@@ -1407,7 +1414,6 @@ async function restoreFromHistory(kind) {
   }
 
   state.annotations = nextAnnotations;
-  state.keypointCount = nextKeypointCount;
   state.selection = { objectIndex: -1, keypointIndex: -1, corner: null };
   state.hover = { objectIndex: -1, keypointIndex: -1, screenX: 0, screenY: 0, isMagnifier: false };
   state.undoStack = [];
@@ -1443,7 +1449,7 @@ async function estimateLabelsFromHistory() {
     pushUndo();
     const annotations = cloneAnnotations(frames[0].annotations);
     state.annotations = annotations;
-    state.keypointCount = inferKeypointCount(annotations, state.keypointCount);
+    syncTaskWithAnnotations(annotations);
     clearSelection();
     markDirty();
     setStatus("Estimated labels from the last available frame.");
@@ -1459,7 +1465,7 @@ async function estimateLabelsFromHistory() {
   }
   pushUndo();
   state.annotations = estimated;
-  state.keypointCount = inferKeypointCount(estimated, state.keypointCount);
+  syncTaskWithAnnotations(estimated);
   clearSelection();
   markDirty();
   setStatus(`Estimated ${estimated.length} label(s) from ${frames.length} frame(s).`);
@@ -1799,6 +1805,151 @@ function parseLabels(text) {
     return [];
   }
   return Labels.parseLabels(text);
+}
+
+function getTaskKeypointCount(task) {
+  if (task === TASKS.POSE_MPII) {
+    return POSE_FORMATS.mpii_pose.count;
+  }
+  if (task === TASKS.POSE) {
+    return POSE_FORMATS.yolo11_pose.count;
+  }
+  if (task === TASKS.DETECTION) {
+    return 0;
+  }
+  return DEFAULT_KPT_COUNT;
+}
+
+function inferTaskFromAnnotations(annotations) {
+  if (!Array.isArray(annotations) || annotations.length === 0) {
+    return null;
+  }
+  let seenPose = false;
+  let seenMpii = false;
+  let seenBbox = false;
+  for (const ann of annotations) {
+    if (!ann || !ann.bbox) {
+      continue;
+    }
+    seenBbox = true;
+    if (!ann.hasPose) {
+      continue;
+    }
+    const count = Array.isArray(ann.keypoints) ? ann.keypoints.length : 0;
+    if (count === POSE_FORMATS.yolo11_pose.count) {
+      seenPose = true;
+    } else if (count === POSE_FORMATS.mpii_pose.count) {
+      seenMpii = true;
+    }
+  }
+  if (seenPose) {
+    return TASKS.POSE;
+  }
+  if (seenMpii) {
+    return TASKS.POSE_MPII;
+  }
+  return seenBbox ? TASKS.DETECTION : null;
+}
+
+function hasPoseData(annotation) {
+  if (!annotation) {
+    return false;
+  }
+  if (annotation.hasPose) {
+    return true;
+  }
+  if (!Array.isArray(annotation.keypoints)) {
+    return false;
+  }
+  return annotation.keypoints.some((kp) => kp && kp.v > 0);
+}
+
+function inferTaskForSave(annotations) {
+  if (!Array.isArray(annotations) || annotations.length === 0) {
+    return null;
+  }
+  let seenPose = false;
+  let seenBbox = false;
+  for (const ann of annotations) {
+    if (!ann || !ann.bbox) {
+      continue;
+    }
+    seenBbox = true;
+    if (hasPoseData(ann)) {
+      seenPose = true;
+      break;
+    }
+  }
+  if (seenPose) {
+    return TASKS.POSE;
+  }
+  return seenBbox ? TASKS.DETECTION : null;
+}
+
+function applyTaskToAnnotations(annotations, task) {
+  if (!Array.isArray(annotations)) {
+    return;
+  }
+  if (task === TASKS.DETECTION) {
+    for (const ann of annotations) {
+      if (!ann) {
+        continue;
+      }
+      ann.keypoints = [];
+      ann.hasPose = false;
+    }
+    return;
+  }
+  if (task !== TASKS.POSE && task !== TASKS.POSE_MPII) {
+    return;
+  }
+  const count = getTaskKeypointCount(task);
+  for (const ann of annotations) {
+    if (!ann) {
+      continue;
+    }
+    if (!Array.isArray(ann.keypoints)) {
+      ann.keypoints = [];
+    }
+    for (let i = ann.keypoints.length; i < count; i += 1) {
+      ann.keypoints.push({ x: 0, y: 0, v: 0 });
+    }
+    if (ann.keypoints.length > count) {
+      ann.keypoints.length = count;
+    }
+    ann.hasPose = true;
+  }
+}
+
+function setTask(task) {
+  if (!task || state.taskLocked) {
+    return;
+  }
+  state.task = task;
+  state.taskLocked = task !== TASKS.AUTO;
+  state.keypointCount = getTaskKeypointCount(task);
+  applyTaskToAnnotations(state.annotations, task);
+}
+
+function resetTask() {
+  state.task = TASKS.AUTO;
+  state.taskLocked = false;
+  state.keypointCount = DEFAULT_KPT_COUNT;
+}
+
+function syncTaskWithAnnotations(annotations) {
+  if (!state.taskLocked) {
+    const task = inferTaskFromAnnotations(annotations);
+    if (task) {
+      setTask(task);
+    }
+  }
+  if (state.taskLocked) {
+    state.keypointCount = getTaskKeypointCount(state.task);
+    applyTaskToAnnotations(annotations, state.task);
+    return;
+  }
+  state.keypointCount = inferKeypointCount(annotations, state.keypointCount);
 }
 
 function getPoseFormatByCount(count) {
@@ -2319,9 +2470,10 @@ function updateOsd() {
   const countLine = state.images.length
     ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
     : "Index: 0/0 TODO: 0";
-  const resLine = state.imageWidth && state.imageHeight
-    ? `Resolution: ${state.imageWidth}x${state.imageHeight}`
-    : "Resolution: -";
+  const taskLine = `Task: ${state.task}`;
+  const resLabel = state.imageWidth && state.imageHeight
+    ? `${state.imageWidth}x${state.imageHeight}`
+    : "-";
   let cropLine = "";
   if (state.crop.active && state.crop.bbox && state.imageWidth && state.imageHeight) {
     const cropPixels = cropToPixels(state.crop.bbox);
@@ -2332,10 +2484,11 @@ function updateOsd() {
     }
   }
   
-  let zoomLine = `Zoom: ${Math.round(state.view.scale * 100)}%`;
+  let zoomLine = `${Math.round(state.view.scale * 100)}%`;
   if (state.magnifier.active) {
     zoomLine += ` (${Math.round(state.magnifier.scale * 100)}%)`;
   }
+  const resZoomLine = `Resolution: ${resLabel}, Zoom: ${zoomLine}`;
 
   const statusLine = `Status: ${state.statusText}`;
   const reviewStatus = state.imageName ? getReviewStatusForImage(state.imageName) : "-";
@@ -2346,9 +2499,9 @@ function updateOsd() {
     fileLine,
     folderLine,
     countLine,
-    resLine,
+    taskLine,
+    resZoomLine,
     ...(cropLine ? [cropLine] : []),
-    zoomLine,
     statusLine,
     modLine,
     ...objectsLines,
@@ -3620,6 +3773,10 @@ function findNextAvailableKeypointIndex(annotation, currentIndex, step) {
 }
 
 function addKeypointAt(objectIndex, worldX, worldY, screenX, screenY, isMagnifier) {
+  if (state.task === TASKS.DETECTION) {
+    setStatus("Detection task: keypoints disabled.");
+    return -1;
+  }
   const annotation = state.annotations[objectIndex];
   if (!annotation) {
     return -1;
@@ -3712,11 +3869,12 @@ function finishNewBBox(event) {
     w: Math.max(0.0001, maxX - minX),
     h: Math.max(0.0001, maxY - minY)
   };
+  const includePose = state.task === TASKS.POSE || state.task === TASKS.POSE_MPII;
   const annotation = {
     classId,
     bbox,
     keypoints: createEmptyKeypoints(),
-    hasPose: false
+    hasPose: includePose
   };
   pushUndo();
   state.annotations.push(annotation);
@@ -4459,6 +4617,15 @@ async function saveLabels(options = {}) {
   const annotationsForSave = cropRect
     ? remapAnnotationsForCrop(state.annotations, cropRect)
     : state.annotations;
+  let taskForSave = state.task;
+  let pendingTask = null;
+  if (!state.taskLocked) {
+    pendingTask = inferTaskForSave(annotationsForSave);
+    if (pendingTask) {
+      taskForSave = pendingTask;
+    }
+  }
+  applyTaskToAnnotations(annotationsForSave, taskForSave);
   const content = serializeLabelsFor(annotationsForSave);
   if (content === null) {
     return;
@@ -4507,6 +4674,9 @@ async function saveLabels(options = {}) {
       setStatus(`Saved ${labelName}`);
     } else {
       setStatus(`Saved ${labelName}, review status not saved.`);
+    }
+    if (pendingTask) {
+      setTask(pendingTask);
     }
   } catch (error) {
     setStatus(`Save error: ${error.message}`);

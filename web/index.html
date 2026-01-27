@@ -44,7 +44,7 @@
         <button class="modal-close" type="button" data-close="true">X</button>
       </div>
       <div class="modal-body scrollable-content">
-        <p class="modal-desc"><strong>GoAnnotate</strong><br>Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.</p>
+        <p class="modal-desc"><strong>GoAnnotate</strong><br>Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set. Each dataset has a Task (Auto, Detection, Pose, Pose_mpii) shown in the Status panel.</p>
         
         <div class="modal-section-title">Getting Started</div>
         <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
@@ -60,7 +60,16 @@
         <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
           <li>YOLO11 pose: 17 keypoints.</li>
           <li>MPII pose: 16 keypoints with ankle -> knee -> hip -> pelvis -> hip -> knee -> ankle, pelvis -> thorax, thorax -> shoulders -> elbows -> wrists, and thorax -> upper neck -> head top.</li>
-          <li>Format is auto-detected per label line by keypoint triplet count.</li>
+          <li>Format is auto-detected per label line by keypoint triplet count and locks the dataset Task once a labeled image is found.</li>
+        </ul>
+        
+        <div class="modal-section-title">Task</div>
+        <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
+          <li>Auto is used for new/empty datasets until the first labeled image is saved (bbox-only -> Detection, any keypoints -> Pose).</li>
+          <li>Detection: bounding boxes only (keypoints are disabled).</li>
+          <li>Pose: bounding boxes + 17 keypoints. Pose_mpii: bounding boxes + 16 keypoints.</li>
+          <li>Mixed objects (some with keypoints, some without) are normalized on save by adding `(0,0,0)` keypoints.</li>
+          <li>Once set, the Task stays fixed until you Load a new dataset.</li>
         </ul>
 
         <div class="modal-section-title">Navigation</div>
@@ -86,7 +95,7 @@
         <div class="keys-grid">
             <div class="key-item"><span>Wheel</span> <span>Zoom</span></div>
             <div class="key-item"><span>Right Drag</span> <span>Pan</span></div>
-            <div class="key-item"><span>Status Panel</span> <span>Shows file, folder, crop size (px); click top-right anchor to minimize</span></div>
+            <div class="key-item"><span>Status Panel</span> <span>Shows file, folder, index/TODO + Task, resolution/zoom, crop size (px); click top-right anchor to minimize</span></div>
             <div class="key-item"><span>Keypoints</span> <span>1px Contrast Halo</span></div>
             <div class="key-item"><span>V</span> <span>Cycle Visibility</span></div>
             <div class="key-item"><span>B</span> <span>Color Schemes</span></div>
@@ -106,7 +115,7 @@
             <div class="key-item"><span>BBox Corner</span> <span>Resize Box</span></div>
             <div class="key-item"><span>Shift + Drag Corner</span> <span>Lock Aspect Ratio (BBox/Crop)</span></div>
             <div class="key-item"><span>Ctrl + Drag</span> <span>New Bounding Box</span></div>
-            <div class="key-item"><span>Ctrl + Click</span> <span>Add Keypoint on Release (no drag)</span></div>
+            <div class="key-item"><span>Ctrl + Click</span> <span>Add Keypoint on Release (no drag, disabled in Detection task)</span></div>
             <div class="key-item"><span>Alt + Drag</span> <span>Define Crop Area</span></div>
             <div class="key-item"><span>Crop Corner</span> <span>Resize Crop</span></div>
             <div class="key-item"><span>Crop Button</span> <span>Auto-fit crop by aspect (1:1, 1:2, 2:3, 3:4, 16:9) with up to 10% padding</span></div>
