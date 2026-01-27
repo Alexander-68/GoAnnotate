@@ -129,6 +129,7 @@ UI
 - The `Estm` button below `Crop` estimates labels from up to 8 previous images using quadratic motion, replacing current labels.
 - Current Done/TODO saves any unsaved edits before marking and advancing.
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
+- Hovering over buttons shows a tooltip describing the action.
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
