@@ -67,9 +67,9 @@ GoAnnotate auto-detects the pose format by counting keypoint triplets in each la
 ## Interactions
 
 Keyboard
-- `A`: Previous image (saves current labels before switching).
-- `D`: Next TODO image (saves current labels before switching).
-- `Left` / `Right Arrow`: Previous / next image (saves current labels before switching).
+- `A`: Previous image (wraps first -> last; saves current labels before switching).
+- `D`: Next TODO image (saves current labels before switching). If no TODO images remain, it advances to the next image (wraps).
+- `Left` / `Right Arrow`: Previous / next image (wraps first/last; saves current labels before switching).
 - `Home` / `End`: Jump to the first / last image.
 - `PageUp` / `PageDown`: Jump 100 images backward / forward.
 - `Esc` or `Ctrl` + `Z`: Undo the last annotation edit (per image, up to 512 actions).
@@ -89,6 +89,7 @@ Mouse
 - Left drag: Move the selected keypoint (positions magnifier).
 - Left drag on empty space or bbox: Pan the view (positions magnifier).
 - Drag bounding box corners: Resize the bounding box (bbox center cannot be dragged; does not reposition the magnifier).
+- Drag bbox side anchors (shown when the side is long enough): Resize in a single dimension; the opposite side stays fixed.
 - Shift + drag a bbox or crop corner: Resize while maintaining the original aspect ratio.
 - Alt + left drag: Define or replace a crop area (applied on save when switching images).
 - Drag crop corners: Resize the crop area.
@@ -103,8 +104,8 @@ Mouse
 
 Touch
 - Folder picker: Single tap enters a folder; double tap selects it.
-- Swipe right: Previous image (saves current labels before switching, works outside the image too).
-- Swipe left: Next image (saves current labels before switching, works outside the image too).
+- Swipe right: Previous image (wraps first -> last; saves current labels before switching, works outside the image too).
+- Swipe left: Next image (wraps last -> first; saves current labels before switching, works outside the image too).
 - Tap a bounding box: Select the object (selection only).
 - Tap a keypoint: Select it and position the magnifier (does not unminimize).
 - Drag a keypoint: Move the selected keypoint (positions magnifier).
@@ -128,7 +129,7 @@ UI
 - The `Crop` button below `Mark` opens aspect choices (1:1, 1:2, 2:3, 3:4, 16:9) to auto-fit a crop around all annotations with up to 10% padding (reduced near borders).
 - The `Estm` button below `Crop` estimates labels from up to 8 previous images using quadratic motion, replacing current labels.
 - Current Done/TODO saves any unsaved edits before marking and advancing.
-- The bottom-left `Prev` and bottom-right `Next` buttons switch images (disabled at the first/last image).
+- The bottom-left `Prev` and bottom-right `Next` buttons switch images (wrap first/last; disabled when fewer than 2 images).
 - Hovering over buttons shows a tooltip describing the action.
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
 - Recent folders appear as a dropdown suggestion for each directory field.

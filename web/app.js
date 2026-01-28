@@ -468,13 +468,13 @@ function init() {
 
   if (prevImageBtn) {
     prevImageBtn.addEventListener("click", () => {
-      changeImage(getActiveIndex() - 1);
+      changeImageWrapped(-1);
     });
   }
 
   if (nextImageBtn) {
     nextImageBtn.addEventListener("click", () => {
-      changeImage(getActiveIndex() + 1);
+      changeImageWrapped(1);
     });
   }
 
@@ -2131,8 +2131,21 @@ function drawCorners(ctx, scale, x, y, w, h) {
     [x, y + h],
     [x + w, y + h]
   ];
+  const midpoints = [];
+  const minSpan = size * 10;
+  if (Math.abs(w) >= minSpan) {
+    const mx = x + w / 2;
+    midpoints.push([mx, y], [mx, y + h]);
+  }
+  if (Math.abs(h) >= minSpan) {
+    const my = y + h / 2;
+    midpoints.push([x, my], [x + w, my]);
+  }
   ctx.fillStyle = "#1d1c1a";
   for (const [cx, cy] of corners) {
+    ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+  }
+  for (const [cx, cy] of midpoints) {
     ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
   }
 }
@@ -2520,9 +2533,9 @@ function updateImageNav() {
     return;
   }
   const total = state.images.length;
-  const hasImages = total > 0;
-  prevImageBtn.disabled = !hasImages || state.index <= 0;
-  nextImageBtn.disabled = !hasImages || state.index >= total - 1;
+  const canNavigate = total > 1;
+  prevImageBtn.disabled = !canNavigate;
+  nextImageBtn.disabled = !canNavigate;
 }
 
 function getReviewStatusForImage(imageName) {
@@ -2615,7 +2628,8 @@ function navigateTodo(step) {
   const startIndex = current + (step >= 0 ? 1 : -1);
   const nextIndex = findNextTodoIndex(startIndex, step);
   if (nextIndex === -1) {
-    setStatus("No TODO images.");
+    setStatus("No TODO images. Advancing to next image.");
+    changeImageWrapped(step >= 0 ? 1 : -1);
     return;
   }
   changeImage(nextIndex);
@@ -3495,9 +3509,9 @@ function onTouchEnd(event) {
       && Math.abs(dx) >= TOUCH_SWIPE_THRESHOLD
       && Math.abs(dx) >= Math.abs(dy) * TOUCH_SWIPE_AXIS_RATIO) {
       if (dx > 0) {
-        changeImage(getActiveIndex() - 1);
+        changeImageWrapped(-1);
       } else {
-        changeImage(getActiveIndex() + 1);
+        changeImageWrapped(1);
       }
     }
   }
@@ -3574,7 +3588,7 @@ function onKeyDown(event) {
 
   if (event.code === "KeyA") {
     event.preventDefault();
-    changeImage(getActiveIndex() - 1);
+    changeImageWrapped(-1);
   }
 
   if (event.code === "KeyD") {
@@ -3584,12 +3598,12 @@ function onKeyDown(event) {
 
   if (event.code === "ArrowLeft") {
     event.preventDefault();
-    changeImage(getActiveIndex() - 1);
+    changeImageWrapped(-1);
   }
 
   if (event.code === "ArrowRight") {
     event.preventDefault();
-    changeImage(getActiveIndex() + 1);
+    changeImageWrapped(1);
   }
 
   if (event.code === "Home") {
@@ -4215,6 +4229,30 @@ function getActiveIndex() {
   return Number.isFinite(state.pendingIndex) ? state.pendingIndex : state.index;
 }
 
+function wrapIndex(index, total) {
+  if (total <= 0) {
+    return -1;
+  }
+  return ((index % total) + total) % total;
+}
+
+function changeImageWrapped(delta) {
+  const total = state.images.length;
+  if (total === 0) {
+    setStatus("No images loaded.");
+    return;
+  }
+  if (total <= 1) {
+    return;
+  }
+  const current = getActiveIndex();
+  const nextIndex = wrapIndex(current + delta, total);
+  if (nextIndex === current) {
+    return;
+  }
+  changeImage(nextIndex);
+}
+
 async function changeImage(nextIndex) {
   if (nextIndex < 0 || nextIndex >= state.images.length) {
     return;
@@ -4792,7 +4830,11 @@ function updateCorners(corners, activeCorner, nx, ny, options = {}) {
   };
   let nextX = nx;
   let nextY = ny;
-  if (options.keepAspect) {
+  const isCorner = activeCorner === "tl"
+    || activeCorner === "tr"
+    || activeCorner === "bl"
+    || activeCorner === "br";
+  if (options.keepAspect && isCorner) {
     const width = Math.abs(current.x2 - current.x1);
     const height = Math.abs(current.y2 - current.y1);
     const aspect = Number.isFinite(options.aspectRatio) && options.aspectRatio > 0
@@ -4846,6 +4888,18 @@ function updateCorners(corners, activeCorner, nx, ny, options = {}) {
   if (activeCorner === "br") {
     current.x2 = nextX;
     current.y2 = nextY;
+  }
+  if (activeCorner === "tm") {
+    current.y1 = nextY;
+  }
+  if (activeCorner === "bm") {
+    current.y2 = nextY;
+  }
+  if (activeCorner === "lm") {
+    current.x1 = nextX;
+  }
+  if (activeCorner === "rm") {
+    current.x2 = nextX;
   }
   return current;
 }
@@ -5597,11 +5651,30 @@ function pickCorner(worldX, worldY, scale) {
       continue;
     }
     const corners = bboxCorners(ann.bbox);
-    for (const corner of ["tl", "tr", "bl", "br"]) {
-      const cornerPos = corners[corner];
-      const dist = Math.hypot(worldX - cornerPos.x, worldY - cornerPos.y);
+    const handles = [
+      { id: "tl", x: corners.tl.x, y: corners.tl.y },
+      { id: "tr", x: corners.tr.x, y: corners.tr.y },
+      { id: "bl", x: corners.bl.x, y: corners.bl.y },
+      { id: "br", x: corners.br.x, y: corners.br.y }
+    ];
+    const size = toWorldSize(8, scale);
+    const minSpan = size * 10;
+    const width = Math.abs(corners.tr.x - corners.tl.x);
+    const height = Math.abs(corners.bl.y - corners.tl.y);
+    if (width >= minSpan) {
+      const mx = (corners.tl.x + corners.tr.x) / 2;
+      handles.push({ id: "tm", x: mx, y: corners.tl.y });
+      handles.push({ id: "bm", x: mx, y: corners.bl.y });
+    }
+    if (height >= minSpan) {
+      const my = (corners.tl.y + corners.bl.y) / 2;
+      handles.push({ id: "lm", x: corners.tl.x, y: my });
+      handles.push({ id: "rm", x: corners.tr.x, y: my });
+    }
+    for (const handle of handles) {
+      const dist = Math.hypot(worldX - handle.x, worldY - handle.y);
       if (dist <= radius) {
-        return { objectIndex: idx, corner, corners };
+        return { objectIndex: idx, corner: handle.id, corners };
       }
     }
   }
