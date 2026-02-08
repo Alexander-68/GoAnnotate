@@ -2473,12 +2473,25 @@ function getImageFolderPath() {
   return `${trimmedBase}${sep}${trimmedRel}`;
 }
 
+function tailChars(text, maxChars) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  if (maxChars <= 0 || text.length <= maxChars) {
+    return text;
+  }
+  return text.slice(-maxChars);
+}
+
 function updateOsd() {
   if (!osdEl || !osdTextEl) {
     return;
   }
-  const fileLine = state.imageName ? `File: ${state.imageName}` : "File: -";
-  const folderLine = `Folder: ${getImageFolderPath()}`;
+  const osdNameMaxChars = 36;
+  const fileValue = state.imageName ? tailChars(state.imageName, osdNameMaxChars) : "-";
+  const folderValue = tailChars(getImageFolderPath(), osdNameMaxChars);
+  const fileLine = `File: ${fileValue}`;
+  const folderLine = `Folder: ${folderValue}`;
   const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
   const countLine = state.images.length
     ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`

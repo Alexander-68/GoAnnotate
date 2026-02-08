@@ -16,7 +16,7 @@ Download executable from Releases. No installation is required. Single file. Try
 ## Functions
 
 - Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
-- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows file and folder, index/TODO + Task, resolution/zoom, status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
+- Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows file and folder (each capped to the last 36 characters), index/TODO + Task, resolution/zoom, status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
 - Minimize the status panel to a single-line summary that shows file index, selected object, and keypoint totals.
 - Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
 - Draw zoom-invariant `class_id:object_id` labels inside the top-left of each bounding box.
@@ -135,7 +135,7 @@ UI
 - Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
-- The status panel lists File and Folder on the first two lines, then Index/TODO and Task, followed by Resolution/Zoom; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
+- The status panel lists File and Folder on the first two lines (each capped to the last 36 characters), then Index/TODO and Task, followed by Resolution/Zoom; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
 - The OSD `Modified` line shows both edit status and review status (TODO/Done).
 
 ## Run
