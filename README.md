@@ -140,7 +140,7 @@ UI
 
 ## Run
 
-Requires Go 1.25+.
+Requires Go 1.27.3+.
 
 ```bash
 go run .

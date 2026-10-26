@@ -150,7 +150,14 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", *ip, *port)
 	log.Printf("GoAnnotate running at http://%s", addr)
-	log.Fatal(http.ListenAndServe(addr, logRequests(mux)))
+	srv := &http.Server{
+		Addr: addr,
+		// Reject cross-site requests so other web pages can't drive the write/delete API.
+		Handler:           http.NewCrossOriginProtection().Handler(logRequests(mux)),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func logRequests(next http.Handler) http.Handler {
@@ -443,7 +450,6 @@ func handleImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "imagesDir and file are required", http.StatusBadRequest)
 		return
 	}
-	log.Println(file)
 	fullPath, err := safeJoin(imagesDir, file)
 	if err != nil {
 		http.Error(w, "invalid path", http.StatusBadRequest)
@@ -598,11 +604,7 @@ func handleLabelsPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
-		return
-	}
-	if err := os.WriteFile(fullPath, []byte(payload.Content), 0o644); err != nil {
+	if err := writeFileAtomic(fullPath, []byte(payload.Content)); err != nil {
 		http.Error(w, "unable to save labels", http.StatusInternalServerError)
 		return
 	}
@@ -703,11 +705,17 @@ func updateLabelHistory(payload labelPayload, priorContent, imageArchiveRel stri
 			Content:  priorContent,
 			ImageRel: imageArchiveRel,
 		}
-	} else if history.Initial.ImageRel == "" && imageArchiveRel != "" {
+	}
+	initialRel := history.Initial.ImageRel
+	if initialRel == "" && imageArchiveRel != "" {
 		history.Initial.ImageRel = imageArchiveRel
 	}
+	// A restored image was moved back out of deleted/, so the reference no longer exists.
+	if payload.RestoreImage != "" && filepath.Clean(payload.RestoreImage) == filepath.Clean(initialRel) {
+		history.Initial.ImageRel = ""
+	}
 
-	if historyExists && history.Latest.Content == payload.Content {
+	if historyExists && history.Latest.Content == payload.Content && history.Initial.ImageRel == initialRel {
 		return nil
 	}
 	history.Latest = labelHistoryEntry{
@@ -720,18 +728,24 @@ func updateLabelHistory(payload labelPayload, priorContent, imageArchiveRel stri
 }
 
 func writeLabelHistory(historyPath string, history labelHistory) error {
-	if err := os.MkdirAll(filepath.Dir(historyPath), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(history, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmpPath, err := writeTempFile(filepath.Dir(historyPath), "goannotate-history-*.tmp", data, 0o644)
+	return writeFileAtomic(historyPath, data)
+}
+
+// writeFileAtomic writes via a temp file in the same dir and renames it over path,
+// so readers never see a partially written file.
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmpPath, err := writeTempFile(filepath.Dir(path), "goannotate-*.tmp", data, 0o644)
 	if err != nil {
 		return err
 	}
-	if _, _, err := replaceWithTemp(tmpPath, historyPath); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}
@@ -740,17 +754,15 @@ func writeLabelHistory(historyPath string, history labelHistory) error {
 
 func restoreImageFromDeleted(imagesDir, imageFile, restoreRel string) error {
 	rel := filepath.Clean(restoreRel)
-	deletedRoot := "deleted"
-	if rel == "" {
-		return errors.New("missing restore path")
-	}
-	if !strings.EqualFold(rel, deletedRoot) &&
-		!strings.HasPrefix(strings.ToLower(rel), deletedRoot+string(os.PathSeparator)) {
-		return errors.New("restore path must be under deleted")
+	if !strings.HasPrefix(strings.ToLower(filepath.ToSlash(rel)), "deleted/") {
+		return errors.New("restore path must be a file under deleted")
 	}
 	restorePath, err := safeJoin(imagesDir, rel)
 	if err != nil {
 		return err
+	}
+	if fi, err := os.Stat(restorePath); err != nil || !fi.Mode().IsRegular() {
+		return errors.New("restore image not found")
 	}
 	targetPath, err := safeJoin(imagesDir, imageFile)
 	if err != nil {
@@ -798,7 +810,7 @@ func cropImageToTemp(imagesDir, imageFile string, crop cropRect) (string, string
 		return "", "", err
 	}
 	bounds := img.Bounds()
-	if crop.X < 0 || crop.Y < 0 || crop.X+crop.W > bounds.Dx() || crop.Y+crop.H > bounds.Dy() {
+	if crop.X < 0 || crop.Y < 0 || crop.W > bounds.Dx()-crop.X || crop.H > bounds.Dy()-crop.Y {
 		return "", "", fmt.Errorf("%w: crop rectangle out of bounds", errBadRequest)
 	}
 	srcRect := image.Rect(crop.X, crop.Y, crop.X+crop.W, crop.Y+crop.H)
@@ -1052,16 +1064,12 @@ func handleReviewStatusPost(w http.ResponseWriter, r *http.Request) {
 	}
 	slices.Sort(done)
 	done = slices.Compact(done)
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		http.Error(w, "unable to create labels dir", http.StatusInternalServerError)
-		return
-	}
 	data, err := json.MarshalIndent(reviewStatusResponse{Done: done}, "", "  ")
 	if err != nil {
 		http.Error(w, "unable to encode review status", http.StatusInternalServerError)
 		return
 	}
-	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+	if err := writeFileAtomic(fullPath, data); err != nil {
 		http.Error(w, "unable to save review status", http.StatusInternalServerError)
 		return
 	}
@@ -1152,11 +1160,9 @@ func safeJoin(baseDir, rel string) (string, error) {
 	if baseDir == "" {
 		return "", errors.New("missing base dir")
 	}
-	if rel == "" {
-		return "", errors.New("missing file")
-	}
-	if filepath.IsAbs(rel) {
-		return "", errors.New("file must be relative")
+	// IsLocal rejects empty, absolute, "..", volume-prefixed and Windows reserved names (NUL, CON...).
+	if !filepath.IsLocal(rel) {
+		return "", errors.New("invalid path")
 	}
 	baseAbs, err := filepath.Abs(baseDir)
 	if err != nil {
@@ -1165,17 +1171,7 @@ func safeJoin(baseDir, rel string) (string, error) {
 	if err := enforceDataRootResolved(baseAbs); err != nil {
 		return "", err
 	}
-	fullAbs, err := filepath.Abs(filepath.Join(baseAbs, rel))
-	if err != nil {
-		return "", err
-	}
-	relPath, err := filepath.Rel(baseAbs, fullAbs)
-	if err != nil {
-		return "", err
-	}
-	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
-		return "", errors.New("invalid path")
-	}
+	fullAbs := filepath.Join(baseAbs, rel)
 	if err := enforceDataRoot(fullAbs); err != nil {
 		return "", err
 	}
@@ -1215,11 +1211,5 @@ func enforceDataRootResolved(path string) error {
 
 func isWithinBase(base, target string) bool {
 	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return false
-	}
-	if rel == "." {
-		return true
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+	return err == nil && filepath.IsLocal(rel)
 }
