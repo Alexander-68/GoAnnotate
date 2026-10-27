@@ -48,7 +48,8 @@
         
         <div class="modal-section-title">Getting Started</div>
         <ul class="modal-list" style="margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.5;">
-          <li>Click <strong>Load</strong> (top-right) to select Images and Labels directories.</li>
+          <li>Click <strong>Load</strong> (top-right): pick a <strong>Recent</strong> folder, or browse (click a folder to enter it, <strong>Open</strong> on a row or the bottom button to load). Typing a path + Enter goes there and opens it if it has images.</li>
+          <li>Labels are auto-detected (same folder as images, YOLO <code>images/x</code> &rarr; <code>labels/x</code>, sibling <code>*labels*</code>, <code>./labels</code>, <code>../labels</code>); if none exist, new labels are saved next to the images. Override under <strong>Labels</strong>.</li>
           <li>Changes save automatically on image switch. Undo available for unsaved changes (up to 512 actions per image).</li>
           <li>Status panel File and Folder lines show the last 36 characters to keep the panel compact.</li>
         </ul>
@@ -178,60 +179,30 @@
   </div>
   <div class="modal hidden" id="loadModal" aria-hidden="true">
     <div class="modal-scrim" data-close="true"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card picker-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <a class="modal-title modal-link" id="modalTitle" href="https://github.com/Alexander-68/GoAnnotate" target="_blank" rel="noopener">GoAnnotate</a>
         <button class="modal-close" type="button" data-close="true" title="Close dialog" aria-label="Close dialog">X</button>
       </div>
       <div class="modal-body">
-        <p class="modal-desc">Visualize and annotate YOLO11 detections plus YOLO11 (17-keypoint) and MPII (16-keypoint) pose labels directly against your local image set.</p>
-        <div class="modal-section-title">Project Paths</div>
-        
-        <div class="field">
-          <div class="field-header">
-            <span>Images Dir</span>
-            <button id="browseImagesBtn" class="btn ghost btn-sm" type="button" title="Browse for an images directory">Browse</button>
-          </div>
-          <input id="imagesDir" type="text" list="imagesDirList" placeholder="C:\data\images" class="full-width-input" />
+        <div id="recentSection" class="hidden">
+          <div class="modal-section-title">Recent</div>
+          <div id="recentList" class="recent-list"></div>
         </div>
-        <datalist id="imagesDirList"></datalist>
-
-        <div id="labelsSection" class="hidden">
-          <div class="field">
-            <div class="field-header">
-              <span>Labels Dir</span>
-              <button id="browseLabelsBtn" class="btn ghost btn-sm" type="button" title="Browse for a labels directory">Browse</button>
-            </div>
-            <input id="labelsDir" type="text" list="labelsDirList" placeholder="C:\data\labels" class="full-width-input" />
-          </div>
-          <datalist id="labelsDirList"></datalist>
+        <div class="modal-section-title">Images Folder</div>
+        <div class="field-with-btn">
+          <button id="pickerUpBtn" class="btn ghost btn-sm" type="button" title="Go to parent folder">&larr; Up</button>
+          <input id="pathInput" type="text" class="path-input" placeholder="Type or paste a folder path, Enter to go" title="Type or paste a folder path, Enter to go (opens it if it has images)" />
         </div>
-
+        <div id="pickerList" class="picker-list"></div>
+        <details id="labelsDetails" class="labels-details">
+          <summary title="Labels are auto-detected: same folder, images/x &rarr; labels/x, sibling *labels*, ./labels or ../labels">Labels: auto-detect</summary>
+          <input id="labelsDir" type="text" class="path-input" placeholder="Labels folder (empty = auto-detect)" />
+        </details>
       </div>
       <div class="modal-actions">
-        <button id="confirmLoadBtn" class="btn ghost" type="button" title="Load the selected directories">Load</button>
-      </div>
-    </div>
-  </div>
-  <div class="modal hidden folder-picker-modal" id="folderPickerModal" aria-hidden="true">
-    <div class="modal-scrim" data-close="true"></div>
-    <div class="modal-card picker-card" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
-      <div class="modal-header">
-        <h2 class="modal-title" id="pickerTitle">Select Directory</h2>
-        <button class="modal-close" type="button" data-close="true" title="Close dialog" aria-label="Close dialog">X</button>
-      </div>
-      <div class="modal-body">
-        <div id="folderPicker" class="folder-picker">
-          <div class="picker-header">
-            <button id="pickerBackBtn" class="btn ghost btn-sm" type="button" title="Go to parent folder">&larr; Up</button>
-            <span id="pickerCurrentPath" class="picker-path"></span>
-          </div>
-          <div id="pickerList" class="picker-list"></div>
-          <div class="picker-actions">
-            <button id="pickerCancelBtn" class="btn ghost btn-sm" type="button" title="Cancel folder selection">Cancel</button>
-            <button id="pickerSelectBtn" class="btn ghost btn-sm" type="button" title="Select the current folder">Select Current</button>
-          </div>
-        </div>
+        <span id="loadError" class="load-error" role="alert"></span>
+        <button id="openFolderBtn" class="btn" type="button" title="Open the current folder">Open</button>
       </div>
     </div>
   </div>

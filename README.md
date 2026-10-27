@@ -15,7 +15,7 @@ Download executable from Releases. No installation is required. Single file. Try
 
 ## Functions
 
-- Load an images directory and a labels directory, matched by basename (`image.jpg` -> `image.txt`).
+- Load an images folder; labels are matched by basename (`image.jpg` -> `image.txt`) and their folder is detected automatically (labels may sit next to the images).
 - Render bounding boxes, pose skeletons, and keypoint handles with a compact OSD panel that shows file and folder (each capped to the last 36 characters), index/TODO + Task, resolution/zoom, status, per-class counts, selected keypoints (when present), selected object size, and active crop size in pixels.
 - Minimize the status panel to a single-line summary that shows file index, selected object, and keypoint totals.
 - Render zoom-invariant line weights with unfilled keypoint circles and a 1px contrast halo for clearer pose review.
@@ -48,13 +48,15 @@ Download executable from Releases. No installation is required. Single file. Try
 - Keep the previous frame visible while loading the next image to avoid blank flashes during navigation.
 - Use a full-screen canvas with overlay OSD, top-right Load/Help buttons, and bottom-left Prev / bottom-right Next buttons for image navigation.
 - Log loaded dataset paths with total and labeled image counts on load.
-- Automatically suggest a Labels Directory when an Images Directory is selected in the UI, prioritized as follows:
-    1.  YOLO-style: `.../labels/{subdir}` if images are in `.../images/{subdir}`.
-    2.  Sibling: replace `images` -> `labels` or `image` -> `label` in the folder name (for example, `images_mosaics` -> `labels_mosaics`, `image-abc` -> `label-abc`).
-    3.  Subdirectory: `imagesDir/labels`.
-    4.  Sibling: `../labels`.
-    5.  Parent: `..`.
-- Prompt before loading when the selected folders contain no images or no label files.
+- Auto-detect the labels folder on load. Candidates are checked in this order and the one containing the most `.txt` files matching image names wins (earlier candidate on ties):
+    1.  Same folder as the images.
+    2.  YOLO-style: `.../labels/{subdir}` if images are in `.../images/{subdir}`.
+    3.  Sibling: replace `images` -> `labels` or `image` -> `label` in the folder name (for example, `images_mosaics` -> `labels_mosaics`, `image-abc` -> `label-abc`).
+    4.  Subdirectory: `imagesDir/labels`.
+    5.  Sibling: `../labels`.
+  If no candidate has matching labels, new label files are written next to the images. A labels folder can still be set manually in the Load popup.
+- Folders without images cannot be opened; folders without labels open normally (new dataset).
+- All file access goes through Go's `os.Root`, so request paths cannot escape the opened folder (no `..`, absolute paths, Windows reserved names, or symlinks pointing outside).
 
 ## Annotation Formats
 
@@ -119,8 +121,12 @@ Touch
 
 UI
 - The app opens with the project popup visible on start.
-- The top-right `Load` button opens the popup with Images Dir and Labels Dir inputs.
-- The `Browse` buttons open a dedicated folder picker overlay starting at the path in the field; single click/tap enters a folder and double click/tap selects it. `Load` warns if no images or labels are found.
+- The top-right `Load` button opens the popup:
+    - `Recent`: click/tap a recently opened folder to reopen it in one step (custom labels folders are remembered).
+    - Folder browser starting at the last opened folder: click/tap a row to enter that folder, `Up` goes to the parent. Rows show image/label counts; rows with images have an `Open` button.
+    - Path field: type or paste a folder path and press `Enter` to go there; if it contains images it is opened directly.
+    - `Labels` (collapsed): optional labels folder override; leave empty for auto-detect.
+    - The bottom `Open (N images)` button loads the folder currently shown. Errors (for example no images) are shown next to it.
 - The `Help` button below `Load` opens a popup with usage instructions and shortcuts.
 - The `Del` button below `Help` deletes the selection, or opens a delete menu when nothing is selected (image/label deletion archives originals in `deleted` subfolders).
 - The `Undo` button below `Del` undoes the last annotation edit (same as `Esc` / `Ctrl` + `Z`, up to 512 actions per image).
@@ -132,10 +138,9 @@ UI
 - The bottom-left `Prev` and bottom-right `Next` buttons switch images (wrap first/last; disabled when fewer than 2 images).
 - Hovering over buttons shows a tooltip describing the action.
 - Changes are saved automatically as soon as the image is changed. Undo works only within unsaved changes and keeps up to 512 actions per image.
-- Recent folders appear as a dropdown suggestion for each directory field.
 - The GoAnnotate title in the popup links to the project repository.
 - Click the '+' on a minimized magnifier to restore it.
-- The status panel lists File and Folder on the first two lines (each capped to the last 36 characters), then Index/TODO and Task, followed by Resolution/Zoom; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
+- The status panel lists File and Folder on the first two lines (each capped to the last 36 characters), plus a Labels line when labels live in a different folder, then Index/TODO and Task, followed by Resolution/Zoom; the top-right anchor collapses the panel to a single-line summary; click again to restore it.
 - The OSD `Modified` line shows both edit status and review status (TODO/Done).
 
 ## Run
@@ -163,5 +168,6 @@ Then open `http://127.0.0.1:8080` (or your configured address) in your browser.
 ## Tests
 
 ```bash
+go test ./...
 node tests/labels.test.js
 ```

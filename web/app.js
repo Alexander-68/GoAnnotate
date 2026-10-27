@@ -1,9 +1,11 @@
 ﻿const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const imagesDirInput = document.getElementById("imagesDir");
 const labelsDirInput = document.getElementById("labelsDir");
-const imagesDirList = document.getElementById("imagesDirList");
-const labelsDirList = document.getElementById("labelsDirList");
+const labelsDetails = document.getElementById("labelsDetails");
+const pathInput = document.getElementById("pathInput");
+const recentSection = document.getElementById("recentSection");
+const recentList = document.getElementById("recentList");
+const loadError = document.getElementById("loadError");
 const openModalBtn = document.getElementById("openModalBtn");
 const openHelpBtn = document.getElementById("openHelpBtn");
 const deleteBtn = document.getElementById("deleteBtn");
@@ -11,7 +13,7 @@ const undoBtn = document.getElementById("undoBtn");
 const markBtn = document.getElementById("markBtn");
 const cropBtn = document.getElementById("cropBtn");
 const estmBtn = document.getElementById("estmBtn");
-const confirmLoadBtn = document.getElementById("confirmLoadBtn");
+const openFolderBtn = document.getElementById("openFolderBtn");
 const loadModal = document.getElementById("loadModal");
 const helpModal = document.getElementById("helpModal");
 const deleteModal = document.getElementById("deleteModal");
@@ -20,20 +22,11 @@ const cropModal = document.getElementById("cropModal");
 const historyModal = document.getElementById("historyModal");
 const prevImageBtn = document.getElementById("prevImageBtn");
 const nextImageBtn = document.getElementById("nextImageBtn");
-const browseImagesBtn = document.getElementById("browseImagesBtn");
-const browseLabelsBtn = document.getElementById("browseLabelsBtn");
-const folderPicker = document.getElementById("folderPicker");
-const folderPickerModal = document.getElementById("folderPickerModal");
 const pickerList = document.getElementById("pickerList");
-const pickerCurrentPath = document.getElementById("pickerCurrentPath");
-const pickerBackBtn = document.getElementById("pickerBackBtn");
-const pickerTitle = document.getElementById("pickerTitle");
-const pickerCancelBtn = document.getElementById("pickerCancelBtn");
-const pickerSelectBtn = document.getElementById("pickerSelectBtn");
+const pickerUpBtn = document.getElementById("pickerUpBtn");
 const osdEl = document.getElementById("osd");
 const osdTextEl = document.getElementById("osdText");
 const osdMinimizeBtn = document.getElementById("osdMinimize");
-const labelsSection = document.getElementById("labelsSection");
 const magnifier = document.getElementById("magnifier");
 const magnifierCanvas = document.getElementById("magnifierCanvas");
 const magCtx = magnifierCanvas ? magnifierCanvas.getContext("2d") : null;
@@ -61,9 +54,7 @@ const historyCancelBtn = document.getElementById("historyCancelBtn");
 
 let loadRequestId = 0;
 let loadAbortController = null;
-let pickerActiveTarget = null;
-let pickerCurrentPathVal = "";
-let pickerSelectedPath = "";
+let picker = { current: "", parent: "" };
 
 const MAX_RECENTS = 10;
 const MAX_UNDO = 512;
@@ -374,16 +365,11 @@ const state = {
 };
 
 const storageKey = {
-  imagesDir: "goannotate.imagesDir",
-  labelsDir: "goannotate.labelsDir",
-  imagesRecent: "goannotate.imagesRecent",
-  labelsRecent: "goannotate.labelsRecent"
+  recent: "goannotate.recent",
+  legacyImagesRecent: "goannotate.imagesRecent"
 };
 
 function init() {
-  imagesDirInput.value = localStorage.getItem(storageKey.imagesDir) || "";
-  labelsDirInput.value = localStorage.getItem(storageKey.labelsDir) || "";
-  refreshRecents();
 
   openModalBtn.addEventListener("click", () => {
     openModal();
@@ -426,43 +412,29 @@ function init() {
     }
   });
 
-  confirmLoadBtn.addEventListener("click", () => {
-    openProject();
+  openFolderBtn.addEventListener("click", () => {
+    openProject(picker.current);
   });
 
-  browseImagesBtn.addEventListener("click", () => {
-    openPicker(imagesDirInput, "Select Images Directory");
-  });
-
-  browseLabelsBtn.addEventListener("click", () => {
-    openPicker(labelsDirInput, "Select Labels Directory");
-  });
-
-  pickerBackBtn.addEventListener("click", () => {
-    navigatePicker("..");
-  });
-
-  pickerCancelBtn.addEventListener("click", () => {
-    closePicker();
-  });
-
-  pickerSelectBtn.addEventListener("click", () => {
-    applyPickerSelection();
-  });
-
-  imagesDirInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      openProject();
+  pickerUpBtn.addEventListener("click", () => {
+    if (picker.parent) {
+      navigatePicker(picker.parent);
     }
   });
 
-  imagesDirInput.addEventListener("input", () => {
-    checkLabelsVisibility();
+  pathInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      navigatePicker(pathInput.value.trim(), true);
+    }
+  });
+
+  pathInput.addEventListener("input", () => {
+    pathInput.classList.remove("invalid");
   });
 
   labelsDirInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
-      openProject();
+      openProject(picker.current);
     }
   });
 
@@ -537,15 +509,6 @@ function init() {
       closeModal();
     }
   });
-
-  if (folderPickerModal) {
-    folderPickerModal.addEventListener("click", (event) => {
-      const target = event.target;
-      if (target && target.dataset && target.dataset.close) {
-        closePicker();
-      }
-    });
-  }
 
   if (deleteModal) {
     deleteModal.addEventListener("click", (event) => {
@@ -701,25 +664,17 @@ function init() {
 }
 
 function openModal() {
-  refreshRecents();
+  renderRecents();
   loadModal.classList.remove("hidden");
   loadModal.setAttribute("aria-hidden", "false");
-  checkLabelsVisibility();
-  imagesDirInput.focus();
-}
-
-function checkLabelsVisibility() {
-  if (imagesDirInput.value.trim() !== "") {
-    labelsSection.classList.remove("hidden");
-  } else {
-    labelsSection.classList.add("hidden");
-  }
+  const recent = getRecents()[0];
+  navigatePicker(picker.current || state.imagesDir || (recent ? recent.imagesDir : ""));
+  pathInput.focus();
 }
 
 function closeModal() {
   loadModal.classList.add("hidden");
   loadModal.setAttribute("aria-hidden", "true");
-  closePicker();
 }
 
 function openHelp() {
@@ -808,272 +763,140 @@ function closeHistoryModal() {
   historyModal.setAttribute("aria-hidden", "true");
 }
 
-async function openPicker(target, title) {
-  pickerActiveTarget = target;
-  if (pickerTitle) {
-    pickerTitle.textContent = title || "Select Directory";
-  }
-  if (folderPickerModal) {
-    folderPickerModal.classList.remove("hidden");
-    folderPickerModal.setAttribute("aria-hidden", "false");
-  } else {
-    folderPicker.classList.remove("hidden");
-  }
-  let startPath = target.value.trim();
-  pickerSelectedPath = startPath;
-  await navigatePicker(startPath);
-}
-
-function applyPickerSelection(overridePath) {
-  if (!pickerActiveTarget) {
-    return;
-  }
-  const val = overridePath || pickerSelectedPath || pickerCurrentPathVal;
-  pickerActiveTarget.value = val;
-  if (pickerActiveTarget === imagesDirInput) {
-    checkLabelsVisibility();
-    suggestLabels(val);
-  }
-  closePicker();
-}
-
-function closePicker() {
-  if (folderPickerModal) {
-    folderPickerModal.classList.add("hidden");
-    folderPickerModal.setAttribute("aria-hidden", "true");
-  } else {
-    folderPicker.classList.add("hidden");
-  }
-  pickerActiveTarget = null;
-}
-
-async function navigatePicker(targetPath) {
-  let bitmap = null;
-  let bitmapAttached = false;
+// Shows folder path in the Load browser. With openIfImages, a folder that
+// contains images is opened directly (used for typed paths).
+async function navigatePicker(path, openIfImages = false) {
   try {
-    let url = "/api/browse";
-    if (targetPath === "..") {
-      if (pickerCurrentPathVal) {
-        url += `?path=${encodeURIComponent(pickerCurrentPathVal)}&parent=true`;
-      }
-    } else if (targetPath) {
-      url += `?path=${encodeURIComponent(targetPath)}`;
-    }
-
-    const response = await fetch(url);
+    const response = await fetch(`/api/browse?path=${encodeURIComponent(path || "")}`);
     if (!response.ok) {
-      if (targetPath) {
+      if (!picker.current && path) {
         await navigatePicker("");
       }
+      pathInput.classList.add("invalid");
       return;
     }
     const data = await response.json();
-
-    if (targetPath === ".." && data.parent) {
-      const parentResponse = await fetch(`/api/browse?path=${encodeURIComponent(data.parent)}`);
-      if (parentResponse.ok) {
-        const parentData = await parentResponse.json();
-        updatePickerUI(parentData);
-        return;
-      }
+    if (openIfImages && data.images > 0) {
+      await openProject(data.current);
+      return;
     }
-
-    updatePickerUI(data);
+    renderPicker(data);
   } catch (err) {
     console.error("Browse error:", err);
   }
 }
 
-async function suggestLabels(imagesDir) {
-  if (!imagesDir) return;
-  try {
-    const url = `/api/suggest_labels?imagesDir=${encodeURIComponent(imagesDir)}`;
-    const response = await fetch(url);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.labelsDir) {
-        labelsDirInput.value = data.labelsDir;
-      }
-    }
-  } catch (e) {
-    console.error("Suggest labels error:", e);
-  }
+function joinPath(dir, name) {
+  const sep = dir.includes("\\") ? "\\" : "/";
+  return dir.endsWith(sep) ? dir + name : dir + sep + name;
 }
 
-function updatePickerUI(data) {
-  pickerCurrentPathVal = data.current;
-  pickerCurrentPath.textContent = data.current;
-  pickerList.innerHTML = "";
+function folderMeta(images, labels) {
+  const parts = [];
+  if (images > 0) parts.push(`${images} img`);
+  if (labels > 0) parts.push(`${labels} lbl`);
+  return parts.join(", ");
+}
 
-  // Reset selection to current folder if we navigated away from explicit selection,
-  // unless the explicit selection is the folder we are currently in.
-  if (pickerSelectedPath && pickerSelectedPath !== data.current) {
-     // Check if pickerSelectedPath is a direct child of data.current?
-     // Actually, simpler logic: assume if we navigated, we reset specific file selection.
-     // But if we just refreshed current view...
-     // Let's just default to current path if the previous selection is not visible here.
-     // Actually, let's keep it simple: If we are here, default selection is the current folder
-     // unless the user clicks a child.
-     pickerSelectedPath = data.current;
-  }
+function renderPicker(data) {
+  picker = { current: data.current, parent: data.parent };
+  pathInput.value = data.current;
+  pathInput.classList.remove("invalid");
+  pickerUpBtn.disabled = !data.parent;
+  openFolderBtn.disabled = data.images === 0;
+  openFolderBtn.textContent = data.images > 0 ? `Open (${data.images} images)` : "No images here";
 
-  const updateSelectBtnText = () => {
-    const isRoot = pickerSelectedPath === data.current;
-    pickerSelectBtn.textContent = isRoot ? "Select Current" : "Select Selected";
-  };
-  updateSelectBtnText();
-
-  data.dirs.forEach((dir) => {
+  const rows = data.dirs.map((dir) => {
+    const fullPath = joinPath(data.current, dir.name);
     const item = document.createElement("div");
     item.className = "picker-item";
-    
-    // Build meta info
+    item.title = `Enter ${fullPath}`;
+    const name = document.createElement("span");
+    name.className = "picker-name";
+    name.textContent = dir.hasSubdirs ? `${dir.name} ›` : dir.name;
     const meta = document.createElement("span");
     meta.className = "picker-meta";
-    const parts = [];
-    if (dir.images > 0) parts.push(`${dir.images} img`);
-    if (dir.labels > 0) parts.push(`${dir.labels} lbl`);
-    if (parts.length > 0) {
-      meta.textContent = parts.join(", ");
+    meta.textContent = folderMeta(dir.images, dir.labels);
+    item.append(name, meta);
+    if (dir.images > 0) {
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "btn btn-sm";
+      openBtn.textContent = "Open";
+      openBtn.title = `Open ${fullPath}`;
+      openBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openProject(fullPath);
+      });
+      item.append(openBtn);
     }
-    
-    // Construct path for this item
-    const separator = pickerCurrentPathVal.includes("\\") ? "\\" : "/";
-    const fullPath = pickerCurrentPathVal.endsWith(separator)
-      ? pickerCurrentPathVal + dir.name
-      : pickerCurrentPathVal + separator + dir.name;
-
-    item.textContent = dir.name;
-    item.appendChild(meta);
-
-    let clickTimer = null;
-    let lastTapTime = 0;
-    let suppressClick = false;
-    const selectFolder = () => {
-      pickerSelectedPath = fullPath;
-      // Update UI highlights
-      Array.from(pickerList.children).forEach(c => c.classList.remove("selected"));
-      item.classList.add("selected");
-      updateSelectBtnText();
-    };
-    const commitSelection = () => {
-      selectFolder();
-      applyPickerSelection(fullPath);
-    };
-
-    item.addEventListener("click", () => {
-      if (suppressClick) {
-        suppressClick = false;
-        return;
-      }
-      if (clickTimer) {
-        clearTimeout(clickTimer);
-      }
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        if (dir.hasSubdirs) {
-          navigatePicker(fullPath);
-        } else {
-          // Select this folder without entering
-          selectFolder();
-        }
-      }, 240);
-    });
-
-    item.addEventListener("dblclick", (event) => {
-      if (clickTimer) {
-        clearTimeout(clickTimer);
-        clickTimer = null;
-      }
-      event.preventDefault();
-      commitSelection();
-    });
-
-    item.addEventListener("pointerup", (event) => {
-      if (event.pointerType !== "touch") {
-        return;
-      }
-      const now = performance.now();
-      if (now - lastTapTime < 300) {
-        if (clickTimer) {
-          clearTimeout(clickTimer);
-          clickTimer = null;
-        }
-        suppressClick = true;
-        commitSelection();
-        lastTapTime = 0;
-        return;
-      }
-      lastTapTime = now;
-    });
-
-    pickerList.appendChild(item);
+    item.addEventListener("click", () => navigatePicker(fullPath));
+    return item;
   });
-
-  pickerBackBtn.disabled = !data.parent || data.parent === data.current;
-  pickerBackBtn.onclick = () => {
-    if (data.parent) navigatePicker(data.parent);
-  };
-}
-
-function refreshRecents() {
-
-
-  updateDatalist(imagesDirList, getRecentList(storageKey.imagesRecent));
-  updateDatalist(labelsDirList, getRecentList(storageKey.labelsRecent));
-}
-
-function getRecentList(key) {
-  const raw = localStorage.getItem(key);
-  if (!raw) {
-    return [];
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "picker-empty";
+    empty.textContent = "No subfolders";
+    rows.push(empty);
   }
+  pickerList.replaceChildren(...rows);
+}
+
+// Recent datasets: [{ imagesDir, labelsDir }], labelsDir is "" when auto-detected.
+function getRecents() {
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
+    const raw = localStorage.getItem(storageKey.recent);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((item) => item && item.imagesDir) : [];
     }
-    return parsed.map((item) => String(item)).filter((item) => item.trim());
+    const legacy = JSON.parse(localStorage.getItem(storageKey.legacyImagesRecent) || "[]");
+    return Array.isArray(legacy) ? legacy.map((dir) => ({ imagesDir: String(dir), labelsDir: "" })) : [];
   } catch (error) {
     return [];
   }
 }
 
-function setRecentList(key, list) {
-  localStorage.setItem(key, JSON.stringify(list));
+function addRecent(imagesDir, labelsDir) {
+  const list = getRecents().filter((item) => item.imagesDir !== imagesDir);
+  list.unshift({ imagesDir, labelsDir });
+  list.length = Math.min(list.length, MAX_RECENTS);
+  try {
+    localStorage.setItem(storageKey.recent, JSON.stringify(list));
+  } catch (error) {
+    // Storage unavailable: recents just aren't remembered.
+  }
 }
 
-function addRecentItem(key, value) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return getRecentList(key);
-  }
-  const current = getRecentList(key).filter((item) => item !== trimmed);
-  current.unshift(trimmed);
-  if (current.length > MAX_RECENTS) {
-    current.length = MAX_RECENTS;
-  }
-  setRecentList(key, current);
-  return current;
+function renderRecents() {
+  const recents = getRecents();
+  recentSection.classList.toggle("hidden", recents.length === 0);
+  recentList.replaceChildren(...recents.map((item) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "picker-item recent-item";
+    row.title = item.labelsDir ? `Open ${item.imagesDir}\nLabels: ${item.labelsDir}` : `Open ${item.imagesDir}`;
+    const name = document.createElement("span");
+    name.className = "picker-name";
+    // Keep the meaningful end of long paths visible.
+    const tail = tailChars(item.imagesDir, 70);
+    name.textContent = tail === item.imagesDir ? tail : `…${tail}`;
+    row.append(name);
+    if (item.labelsDir) {
+      const meta = document.createElement("span");
+      meta.className = "picker-meta";
+      meta.textContent = "custom labels";
+      row.append(meta);
+    }
+    row.addEventListener("click", () => openProject(item.imagesDir, item.labelsDir));
+    return row;
+  }));
 }
 
-function updateDatalist(listEl, values) {
-  if (!listEl) {
-    return;
-  }
-  listEl.innerHTML = "";
-  values.forEach((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    listEl.appendChild(option);
-  });
-}
-
-async function openProject() {
-  const imagesDir = imagesDirInput.value.trim();
-  const labelsDir = labelsDirInput.value.trim();
-  if (!imagesDir || !labelsDir) {
-    setStatus("Provide both image and label directories.");
+// Loads the dataset in imagesDir. Labels come from labelsOverride, or are
+// auto-detected by the server when it is empty.
+async function openProject(imagesDir, labelsOverride = labelsDirInput.value.trim()) {
+  if (!imagesDir) {
     return;
   }
   if (state.dirty) {
@@ -1083,68 +906,37 @@ async function openProject() {
     }
   }
 
-  setStatus("Loading image list...");
+  loadError.textContent = "";
   try {
-    const listUrl = `/api/list?imagesDir=${encodeURIComponent(imagesDir)}&labelsDir=${encodeURIComponent(labelsDir)}`;
+    const listUrl = `/api/list?imagesDir=${encodeURIComponent(imagesDir)}&labelsDir=${encodeURIComponent(labelsOverride)}`;
     const response = await fetch(listUrl);
     if (!response.ok) {
-      throw new Error("Unable to list images");
+      throw new Error((await response.text()).trim() || "Unable to list images");
     }
     const data = await response.json();
     const images = data.images || [];
-    const labelFiles = Number.isFinite(data.labelFiles)
-      ? data.labelFiles
-      : images.reduce((count, entry) => count + (entry.labelExists ? 1 : 0), 0);
-    const warnings = [];
     if (images.length === 0) {
-      warnings.push("No images found in the Images Dir.");
-    }
-    if (labelFiles === 0) {
-      warnings.push("No label files found in the Labels Dir.");
-    }
-    if (warnings.length > 0) {
-      const message = `${warnings.join(" ")}\n\nSelect Cancel to change folders, or OK to load anyway.`;
-      const proceed = window.confirm(message);
-      if (!proceed) {
-        setStatus("Update directories and try again.");
-        return;
-      }
+      throw new Error(`No images in ${imagesDir}`);
     }
 
     closeModal();
+    labelsDirInput.value = "";
+    labelsDetails.open = false;
+    picker.current = imagesDir;
 
     state.imagesDir = imagesDir;
-    state.labelsDir = labelsDir;
-    localStorage.setItem(storageKey.imagesDir, imagesDir);
-    localStorage.setItem(storageKey.labelsDir, labelsDir);
-    updateDatalist(imagesDirList, addRecentItem(storageKey.imagesRecent, imagesDir));
-    updateDatalist(labelsDirList, addRecentItem(storageKey.labelsRecent, labelsDir));
+    state.labelsDir = data.labelsDir;
+    addRecent(imagesDir, labelsOverride);
 
     state.images = images;
     state.imageVersions = {};
-    await loadReviewStatus(labelsDir);
+    await loadReviewStatus(state.labelsDir);
     resetTask();
-    if (state.images.length === 0) {
-      setStatus("No images found in the directory.");
-      state.loadingImage = false;
-      state.pendingIndex = null;
-      state.imageBitmap = null;
-      state.imageWidth = 0;
-      state.imageHeight = 0;
-      state.imageName = "";
-      state.annotations = [];
-      state.baseAnnotations = [];
-      state.crop = { active: false, bbox: null };
-      state.baseCrop = { active: false, bbox: null };
-      state.undoStack = [];
-      state.dirty = false;
-      state.modifiedSinceLoad = false;
-      updateImageNav();
-      return;
-    }
     state.index = 0;
     await loadImage(state.index);
   } catch (error) {
+    // The Load dialog may still be open, so show the error there too.
+    loadError.textContent = error.message;
     setStatus(`Error: ${error.message}`);
   }
 }
@@ -2492,6 +2284,10 @@ function updateOsd() {
   const folderValue = tailChars(getImageFolderPath(), osdNameMaxChars);
   const fileLine = `File: ${fileValue}`;
   const folderLine = `Folder: ${folderValue}`;
+  // Shown only when labels live outside the images folder.
+  const labelsLine = state.labelsDir && state.labelsDir !== state.imagesDir
+    ? `Labels: ${tailChars(state.labelsDir, osdNameMaxChars)}`
+    : "";
   const todoCount = Math.max(0, state.images.length - state.reviewDone.size);
   const countLine = state.images.length
     ? `Index: ${state.index + 1}/${state.images.length} TODO: ${todoCount}`
@@ -2524,6 +2320,7 @@ function updateOsd() {
   const lines = [
     fileLine,
     folderLine,
+    ...(labelsLine ? [labelsLine] : []),
     countLine,
     taskLine,
     resZoomLine,
@@ -3537,10 +3334,6 @@ function onTouchEnd(event) {
 
 function onKeyDown(event) {
   if (event.code === "Escape") {
-    if (folderPickerModal && !folderPickerModal.classList.contains("hidden")) {
-      closePicker();
-      return;
-    }
     if (!loadModal.classList.contains("hidden")) {
       closeModal();
       return;
